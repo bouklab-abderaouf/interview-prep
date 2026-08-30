@@ -78,10 +78,14 @@ export default function SessionPage({
     setStatus("connecting");
 
     try {
+      // 'full' mode, not 'demo': as of Phase 1, 'demo' is guardrail-gated
+      // (kill switch, rate limits, Turnstile — specs §5.3) and this harness
+      // has none of that wiring. 'full' has no guard until Phase 2's auth
+      // check exists, so it stays a plain connectivity smoke test.
       const tokenRes = await fetch("/api/live/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "demo" }),
+        body: JSON.stringify({ mode: "full" }),
       });
 
       if (!tokenRes.ok) {

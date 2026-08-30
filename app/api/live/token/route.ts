@@ -4,6 +4,16 @@ import { z } from "zod";
 
 import { buildLiveConnectConfig } from "@/lib/live/config";
 import type { TokenResponseBody } from "@/lib/live/types";
+import { checkKillSwitch } from "@/lib/guardrails/kill-switch";
+import {
+  checkGlobalDailyCap,
+  checkPerIpCap,
+  getClientIp,
+  hashIp,
+  incrementDemoSessionCount,
+} from "@/lib/guardrails/rate-limit";
+import { verifyTurnstileToken } from "@/lib/guardrails/turnstile";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 // specs §4.1: shortest workable TTL for connection, session lock shortly
 // after first use so a leaked token is useless within a minute.
@@ -18,10 +28,18 @@ import type { TokenResponseBody } from "@/lib/live/types";
 const TOKEN_CONNECT_WINDOW_MS = 2 * 60 * 1000;
 const TOKEN_SESSION_LENGTH_MS = 10 * 60 * 1000; // matches FULL_SESSION_MAX_SECONDS (specs §2)
 
-const TokenRequestSchema = z.object({
-  mode: z.enum(["demo", "full"]),
-  stageId: z.string().optional(),
-});
+const TokenRequestSchema = z
+  .object({
+    mode: z.enum(["demo", "full"]),
+    stageId: z.string().optional(),
+    // Not in specs §4.1's original request shape, but §5.2 requires the
+    // widget solved before minting anything — has to travel somehow.
+    turnstileToken: z.string().optional(),
+  })
+  .refine((data) => data.mode !== "demo" || !!data.turnstileToken, {
+    message: "turnstileToken is required for demo mode",
+    path: ["turnstileToken"],
+  });
 
 export async function POST(request: Request) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -43,11 +61,60 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
 
-  const { mode } = parsed.data;
+  const { mode, turnstileToken } = parsed.data;
+
+  // specs §5.3 — enforced in this exact order, demo mode only. 'full' mode's
+  // guard is an auth check, which doesn't exist until Phase 2.
+  let ipHash: string | null = null;
+  if (mode === "demo") {
+    try {
+      const killSwitch = await checkKillSwitch();
+      if (killSwitch.killed) {
+        return NextResponse.json({ reason: "demo_paused" }, { status: 503 });
+      }
+
+      const dailyCap = await checkGlobalDailyCap();
+      if (dailyCap.exceeded) {
+        return NextResponse.json({ reason: "daily_cap" }, { status: 503 });
+      }
+
+      const ip = getClientIp(request);
+      ipHash = hashIp(ip);
+      const perIpCap = await checkPerIpCap(ipHash);
+      if (perIpCap.exceeded) {
+        return NextResponse.json({ reason: "rate_limited" }, { status: 429 });
+      }
+
+      const turnstileOk = await verifyTurnstileToken(turnstileToken as string, ip);
+      if (!turnstileOk) {
+        return NextResponse.json({ reason: "turnstile_failed" }, { status: 403 });
+      }
+    } catch (error) {
+      console.error("[api/live/token] guardrail check failed", error);
+      return NextResponse.json({ reason: "guardrail_error" }, { status: 503 });
+    }
+  }
 
   // Defaults to 'fr' — matches profiles.locale and sessions.language
   // defaults. No language field on the request yet; Phase 1's demo adds one.
   const language = "fr" as const;
+
+  // specs §5.3 step 5 — increment counters and insert the sessions row
+  // before minting. Demo sessions get user_id = null; no anon RLS policy
+  // reaches them, so this write goes through the service-role client.
+  if (mode === "demo") {
+    try {
+      await incrementDemoSessionCount();
+      const supabase = createAdminClient();
+      const { error } = await supabase
+        .from("sessions")
+        .insert({ mode: "demo", language, ip_hash: ipHash });
+      if (error) throw error;
+    } catch (error) {
+      console.error("[api/live/token] failed to record demo session", error);
+      return NextResponse.json({ reason: "guardrail_error" }, { status: 503 });
+    }
+  }
 
   const client = new GoogleGenAI({ apiKey });
   const now = Date.now();

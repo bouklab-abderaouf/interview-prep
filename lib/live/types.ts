@@ -5,6 +5,8 @@ export type InterviewLanguage = "fr" | "en";
 export interface TokenRequestBody {
   mode: InterviewMode;
   stageId?: string;
+  /** Required when mode is 'demo' — specs §5.3. */
+  turnstileToken?: string;
 }
 
 export interface TokenResponseBody {
