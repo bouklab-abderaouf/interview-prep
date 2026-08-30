@@ -7,6 +7,8 @@ export interface TokenRequestBody {
   stageId?: string;
   /** Required when mode is 'demo' — specs §5.3. */
   turnstileToken?: string;
+  /** Defaults to 'fr' server-side when omitted. */
+  language?: InterviewLanguage;
 }
 
 export interface TokenResponseBody {

@@ -14,6 +14,7 @@ import {
 } from "@/lib/guardrails/rate-limit";
 import { verifyTurnstileToken } from "@/lib/guardrails/turnstile";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { demoScenario } from "@/lib/fixtures/demo-scenario";
 
 // specs §4.1: shortest workable TTL for connection, session lock shortly
 // after first use so a leaked token is useless within a minute.
@@ -35,6 +36,10 @@ const TokenRequestSchema = z
     // Not in specs §4.1's original request shape, but §5.2 requires the
     // widget solved before minting anything — has to travel somehow.
     turnstileToken: z.string().optional(),
+    // Also not in §4.1's original shape. §5.2's demo needs a working FR/EN
+    // toggle; Phase 2 will instead derive this from the stage/roadmap once
+    // stageId resolves to real data.
+    language: z.enum(["fr", "en"]).optional(),
   })
   .refine((data) => data.mode !== "demo" || !!data.turnstileToken, {
     message: "turnstileToken is required for demo mode",
@@ -61,7 +66,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
 
-  const { mode, turnstileToken } = parsed.data;
+  const { mode, turnstileToken, language: requestedLanguage } = parsed.data;
 
   // specs §5.3 — enforced in this exact order, demo mode only. 'full' mode's
   // guard is an auth check, which doesn't exist until Phase 2.
@@ -96,8 +101,9 @@ export async function POST(request: Request) {
   }
 
   // Defaults to 'fr' — matches profiles.locale and sessions.language
-  // defaults. No language field on the request yet; Phase 1's demo adds one.
-  const language = "fr" as const;
+  // defaults — when the caller doesn't specify (e.g. the Phase 0 test
+  // harness). Phase 2 will override this from stage/roadmap data instead.
+  const language = requestedLanguage ?? "fr";
 
   // specs §5.3 step 5 — increment counters and insert the sessions row
   // before minting. Demo sessions get user_id = null; no anon RLS policy
@@ -129,7 +135,11 @@ export async function POST(request: Request) {
         newSessionExpireTime,
         liveConnectConstraints: {
           model,
-          config: buildLiveConnectConfig({ mode, language }),
+          config: buildLiveConnectConfig({
+            mode,
+            language,
+            scenario: mode === "demo" ? demoScenario : undefined,
+          }),
         },
         // Empty array: locks every field set in liveConnectConstraints.config
         // (systemInstruction included) so a client cannot swap the
