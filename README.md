@@ -13,15 +13,17 @@ for actual interview prep.
 guardrails) are built and verified end-to-end against a live Gemini Live API
 session and a real Supabase project.
 
-**Phase 2** (auth, CV/JD intake, gap analysis) is built but only partially
-verified: the two Gemini calls behind `/api/analyze` are each independently
-confirmed against the real API with a synthetic CV, but the full route
-(auth → storage → DB writes → both calls chained) hasn't run end-to-end yet
-— that needs a real signed-in session, and the day's free-tier Gemini quota
-ran out mid-verification. See [Known gaps and risks](#known-gaps-and-risks).
+**Phase 2** (auth, CV/JD intake, gap analysis) and **Phase 3** (turn capture,
+deterministic metrics, Gemini scoring, scorecard UI) are built. Both share
+the same verification gap: the two Gemini calls behind `/api/analyze` and
+the full scoring pipeline are each independently confirmed against the real
+API, and the scorecard UI is confirmed rendering correctly end-to-end via
+the static `/sample-scorecard` page — but the full authenticated chain
+(sign in → upload a CV → run a real interview → get scored) hasn't run
+start-to-finish yet. See [Known gaps and risks](#known-gaps-and-risks).
 
-Phases 3–5 — transcripts and scorecards, the gamified roadmap, and shipping
-— are not built yet. See [Roadmap](#roadmap) below.
+Phases 4–5 — the gamified roadmap and shipping — are not built yet. See
+[Roadmap](#roadmap) below.
 
 ## What's here right now
 
@@ -35,6 +37,12 @@ Phases 3–5 — transcripts and scorecards, the gamified roadmap, and shipping
 - **CV/JD intake and gap analysis.** Upload a CV, paste a job description,
   get back structured candidate/role/gap data and 4 interview stages with
   question banks — built from the CV's actual content, not a template.
+- **Real stage-driven interviews.** Once a roadmap exists, `/session/[id]`
+  runs an authenticated, gated interview built from that stage's actual
+  persona and question bank, captures the transcript with per-turn
+  timestamps, and scores it into a scorecard on completion — STAR
+  breakdown, deterministic communication metrics, grounded strengths and
+  improvements, model answers, and XP/stage-unlock progression.
 - **A full Postgres schema** (Supabase), RLS enabled on every table from the
   first migration, not retrofitted.
 
@@ -74,6 +82,20 @@ Phases 3–5 — transcripts and scorecards, the gamified roadmap, and shipping
   confirmed by bisecting against the live API. That one field is generated
   in a second, cheap, text-only call and merged in — see the comment in
   `lib/gemini/analyze-gap.ts` for the full story.
+- **Turn capture.** `inputAudioTranscription`/`outputAudioTranscription`
+  arrive as incremental deltas, not full turn text — concatenated per-role
+  until the server marks a turn `finished`, timestamped relative to session
+  start. Flushed to Postgres on a 60s safety timer, on session end, and on
+  tab close via `fetch(..., {keepalive: true})` — not
+  `navigator.sendBeacon`, which is POST-only and can't carry the PATCH this
+  needs.
+- **Scoring.** One Gemini call — transcript, stage focus areas/question
+  bank, roadmap gaps, and the deterministic metrics (commented on, never
+  recomputed by the model) in; a Scorecard out. `Scorecard` is shallow
+  enough (no array nested inside another array) that it doesn't hit the
+  complexity budget `GapAnalysis` does, so this one stays a single call as
+  specced. Every strength's quote is checked against the actual transcript
+  and dropped if it isn't verbatim.
 
 ## Key decisions (and why)
 
@@ -85,6 +107,8 @@ Phases 3–5 — transcripts and scorecards, the gamified roadmap, and shipping
 | Live model | Verify against `models.list` before deploying | Live model IDs churn — this repo has already hit one rename mid-build |
 | `GEMINI_API_KEY` billing tier | Stayed on free tier; added a notice instead | The spec's own fallback option — see [Known gaps and risks](#known-gaps-and-risks) |
 | Gap-analysis output | Two Gemini calls (primary + follow-ups), not one | The spec calls for one call, but the full schema exceeds Gemini's structured-output complexity budget — see Architecture above |
+| XP duration bonus | 1 XP per minute spent | The spec names `duration_bonus` in its XP formula without defining it — this is a documented reading, not a literal spec value |
+| Turn flush on tab close | `fetch(..., {keepalive: true})`, not `navigator.sendBeacon` | sendBeacon is POST-only; flushing turns needs PATCH |
 
 ## Setup
 
@@ -124,13 +148,18 @@ matches `app/auth/confirm/route.ts`.
 npm run dev
 ```
 
-- `/session/[id]` — a manual, unguarded connectivity test for the voice
-  loop (`mode: 'full'`, gated behind sign-in as of Phase 2). Displays live
-  TTFA/median/p90.
+- `/session/[id]` — without a `?stageId=` query param, a manual, unguarded
+  connectivity test for the voice loop (`mode: 'full'`, no turn capture,
+  gated behind sign-in as of Phase 2). Displays live TTFA/median/p90. With
+  `?stageId=`, the real interview room: gated on ownership + the stage
+  being unlocked, captures turns, scores on completion, and redirects to
+  the scorecard.
 - `/demo` — the real public flow: language toggle, Turnstile, mic
   permission, a 2-minute countdown.
 - `/sign-in` → `/onboarding` — sign in with a magic link, then upload a CV
-  and paste a job description to generate a roadmap.
+  and paste a job description to generate a roadmap (Phase 4's UI for
+  starting a stage from that roadmap doesn't exist yet — see Known gaps).
+- `/sample-scorecard` — the scorecard UI on a fixture, no auth needed.
 
 ## Known gaps and risks
 
@@ -142,30 +171,42 @@ npm run dev
   that was a deliberate choice, not an oversight, but it means real CV
   content may be used to improve Google's models, and the 20/day cap is a
   real operational limit (gap analysis alone uses 2 calls per attempt).
-- **`/api/analyze` hasn't run end-to-end yet.** The two Gemini calls behind
-  it are each independently verified against the real API; the full route —
-  real auth session, Storage upload, all four DB inserts, both calls
-  chained — is not. Needs a real signed-in user to exercise (the magic link
-  requires clicking through a real inbox) and the day's Gemini quota was
-  exhausted mid-verification.
+- **Nothing has run the full authenticated chain end-to-end yet.**
+  `/api/analyze`'s two Gemini calls, and the scoring pipeline's one call,
+  are each independently verified against the real API; the scorecard UI
+  is verified rendering correctly via the static `/sample-scorecard` page.
+  What's *not* yet verified is the whole chain in one run — sign in, upload
+  a real CV, run a real interview, get scored — since that needs a real
+  signed-in user (the magic link requires clicking through a real inbox)
+  and the free-tier Gemini quota (20 requests/model/day) has been the
+  limiting factor during development.
 - **The Gemini structured-output complexity budget is undocumented.** The
-  two-call split works for the current schema; if `GapAnalysis` grows
-  another nested field, it may need to move into whichever call has more
-  headroom, or split further. No documented number to design against — this
-  was found by bisection, not a published limit.
-- **No guard on `mode: 'full'` session requests below the app layout.** The
-  proxy and layout auth checks cover the page routes; `/api/live/token`
-  itself still accepts `mode: 'full'` from anyone who knows the endpoint,
-  same as Phase 1 — that's a real auth check on the *session-creation*
-  path (`POST /api/sessions`, Phase 3), not the token endpoint itself.
+  two-call split works for `GapAnalysis`; `Scorecard` stays one call
+  because it's shallow enough not to hit the same budget. If either schema
+  grows another nested field, re-check against the live API — this was
+  found by bisection, not a published limit.
+- **`mode: 'full'` without a `stageId` is still an intentionally unguarded
+  smoke test.** With a `stageId`, the token endpoint now fully gates on
+  auth + ownership + the stage being unlocked (specs §8.3). Without one, it
+  stays the original Phase 0 connectivity check — no CV data, no
+  stage-specific prompt, low enough risk to leave reachable by anyone who
+  knows the endpoint.
+- **No UI actually links to `/session/[id]?stageId=...` yet.** That trigger
+  is Phase 4's "Start" button on the skill tree, which doesn't exist until
+  Phase 4. The mechanism (session creation, gating, turn capture, scoring)
+  is built and independently testable by constructing the URL by hand.
 - **TTFA's local fallback is a heuristic, not ground truth.** It infers
   end-of-speech from mic energy dropping for ~800ms, mirroring the server's
   own `silenceDurationMs` — useful for a sanity check, not a rigorous
   benchmark, until the project is allowlisted for the real
   `voiceActivityDetectionSignal`.
+- **`/sample-scorecard` uses a fixture, not a real scorecard.** The spec
+  calls for "a real scorecard of mine" — swap
+  `lib/fixtures/sample-scorecard.ts` for a real one once a real interview
+  has actually been scored.
 - **The demo reel and GitHub link on the landing page are placeholders.**
-  The reel is recorded once Phase 3's scorecards exist to show off; the
-  repo link needs to be filled in by hand.
+  The reel is recorded now that Phase 3's scorecards exist to show off, but
+  hasn't been; the repo link needs to be filled in by hand.
 
 ## Roadmap
 
@@ -173,6 +214,7 @@ npm run dev
 - [x] Phase 1 — public demo + guardrails
 - [x] Phase 2 — CV/JD intake and gap analysis (built, not yet fully
       end-to-end verified — see Known gaps and risks)
-- [ ] Phase 3 — transcripts and scorecards
+- [x] Phase 3 — transcripts and scorecards (built, not yet fully
+      end-to-end verified — see Known gaps and risks)
 - [ ] Phase 4 — gamified roadmap
 - [ ] Phase 5 — ship
