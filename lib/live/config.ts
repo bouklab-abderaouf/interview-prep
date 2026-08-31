@@ -1,6 +1,6 @@
 import { Modality, type LiveConnectConfig } from "@google/genai";
 
-import { buildInterviewerPrompt } from "@/lib/prompts/interviewer";
+import { buildInterviewerPrompt, type StageContext } from "@/lib/prompts/interviewer";
 import type { InterviewLanguage, InterviewMode } from "@/lib/live/types";
 import type { DemoScenario } from "@/lib/fixtures/demo-scenario";
 
@@ -8,6 +8,7 @@ interface BuildLiveConnectConfigParams {
   mode: InterviewMode;
   language: InterviewLanguage;
   scenario?: DemoScenario;
+  stageContext?: StageContext;
 }
 
 // Per specs §4.4. `silenceDurationMs` is the single most impactful UX knob —
@@ -16,6 +17,7 @@ export function buildLiveConnectConfig({
   mode,
   language,
   scenario,
+  stageContext,
 }: BuildLiveConnectConfigParams): LiveConnectConfig {
   return {
     responseModalities: [Modality.AUDIO],
@@ -23,7 +25,7 @@ export function buildLiveConnectConfig({
       voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } },
       languageCode: language === "fr" ? "fr-FR" : "en-US",
     },
-    systemInstruction: buildInterviewerPrompt({ mode, language, scenario }),
+    systemInstruction: buildInterviewerPrompt({ mode, language, scenario, stageContext }),
     inputAudioTranscription: {},
     outputAudioTranscription: {},
     realtimeInputConfig: {

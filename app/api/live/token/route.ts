@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { buildLiveConnectConfig } from "@/lib/live/config";
-import type { TokenResponseBody } from "@/lib/live/types";
+import type { InterviewLanguage, TokenResponseBody } from "@/lib/live/types";
+import type { StageContext } from "@/lib/prompts/interviewer";
 import { checkKillSwitch } from "@/lib/guardrails/kill-switch";
 import {
   checkGlobalDailyCap,
@@ -14,7 +15,9 @@ import {
 } from "@/lib/guardrails/rate-limit";
 import { verifyTurnstileToken } from "@/lib/guardrails/turnstile";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { demoScenario } from "@/lib/fixtures/demo-scenario";
+import { StagePersonaSchema, StageQuestionSchema } from "@/lib/gemini/schemas";
 
 // specs §4.1: shortest workable TTL for connection, session lock shortly
 // after first use so a leaked token is useless within a minute.
@@ -66,7 +69,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
 
-  const { mode, turnstileToken, language: requestedLanguage } = parsed.data;
+  const { mode, stageId, turnstileToken, language: requestedLanguage } = parsed.data;
 
   // specs §5.3 — enforced in this exact order, demo mode only. 'full' mode's
   // guard is an auth check, which doesn't exist until Phase 2.
@@ -100,10 +103,58 @@ export async function POST(request: Request) {
     }
   }
 
+  // specs §7 — 'full' mode with a stageId: a real authenticated session,
+  // gated on ownership (RLS on `stages`/`progress`) and the stage being
+  // unlocked (specs §8.3 acceptance criteria). Without a stageId, 'full'
+  // stays the ungated connectivity smoke test from Phase 0 — no CV data, no
+  // stage-specific prompt, low enough risk to leave as a quick manual check.
+  let stageContext: StageContext | undefined;
+  let stageLanguage: InterviewLanguage | undefined;
+  if (mode === "full" && stageId) {
+    const supabase = await createClient();
+    const { data: claimsData } = await supabase.auth.getClaims();
+    const userId = claimsData?.claims.sub;
+    if (!userId) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+
+    const { data: stage, error: stageError } = await supabase
+      .from("stages")
+      .select("title, focus_areas, persona, question_bank, roadmaps(language)")
+      .eq("id", stageId)
+      .maybeSingle<{
+        title: string;
+        focus_areas: string[];
+        persona: unknown;
+        question_bank: unknown;
+        roadmaps: { language: InterviewLanguage } | null;
+      }>();
+    if (stageError || !stage) {
+      return NextResponse.json({ error: "stage_not_found" }, { status: 404 });
+    }
+
+    const { data: progress } = await supabase
+      .from("progress")
+      .select("unlocked")
+      .eq("user_id", userId)
+      .eq("stage_id", stageId)
+      .maybeSingle();
+    if (!progress?.unlocked) {
+      return NextResponse.json({ error: "stage_locked" }, { status: 403 });
+    }
+
+    stageContext = {
+      title: stage.title,
+      focusAreas: stage.focus_areas,
+      persona: StagePersonaSchema.parse(stage.persona),
+      questionBank: z.array(StageQuestionSchema).parse(stage.question_bank),
+    };
+    stageLanguage = stage.roadmaps?.language;
+  }
+
   // Defaults to 'fr' — matches profiles.locale and sessions.language
-  // defaults — when the caller doesn't specify (e.g. the Phase 0 test
-  // harness). Phase 2 will override this from stage/roadmap data instead.
-  const language = requestedLanguage ?? "fr";
+  // defaults — when nothing more specific is available.
+  const language = stageLanguage ?? requestedLanguage ?? "fr";
 
   // specs §5.3 step 5 — increment counters and insert the sessions row
   // before minting. Demo sessions get user_id = null; no anon RLS policy
@@ -139,6 +190,7 @@ export async function POST(request: Request) {
             mode,
             language,
             scenario: mode === "demo" ? demoScenario : undefined,
+            stageContext,
           }),
         },
         // Empty array: locks every field set in liveConnectConstraints.config

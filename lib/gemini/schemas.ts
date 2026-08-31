@@ -1,5 +1,23 @@
 import { z } from "zod";
 
+// specs §6.1's stages[].persona / stages[].questions shape, factored out so
+// Phase 3's token endpoint can validate the same shape read back out of
+// stages.persona / stages.question_bank (specs §3) — those columns are
+// written straight from a parsed GapAnalysis in app/api/analyze/route.ts.
+export const StagePersonaSchema = z.object({
+  name: z.string(),
+  role: z.string(),
+  tone: z.enum(["warm", "neutral", "skeptical"]),
+  strictness: z.number().min(1).max(5),
+});
+
+export const StageQuestionSchema = z.object({
+  text: z.string(),
+  // which gap or requirement it probes
+  targets: z.string(),
+  follow_ups: z.array(z.string()).max(3),
+});
+
 // specs §6.1 — mirrored as the Gemini responseJsonSchema. Keep this exact
 // shape: app/api/analyze/route.ts inserts stages/gap_analysis straight from
 // a parsed instance of this schema into the DB.
@@ -50,23 +68,8 @@ export const GapAnalysis = z.object({
         title: z.string(),
         description: z.string(),
         focus_areas: z.array(z.string()).max(5),
-        persona: z.object({
-          name: z.string(),
-          role: z.string(),
-          tone: z.enum(["warm", "neutral", "skeptical"]),
-          strictness: z.number().min(1).max(5),
-        }),
-        questions: z
-          .array(
-            z.object({
-              text: z.string(),
-              // which gap or requirement it probes
-              targets: z.string(),
-              follow_ups: z.array(z.string()).max(3),
-            }),
-          )
-          .min(5)
-          .max(10),
+        persona: StagePersonaSchema,
+        questions: z.array(StageQuestionSchema).min(5).max(10),
       }),
     )
     .length(4),
