@@ -19,6 +19,13 @@ const HOW_IT_WORKS = [
 export default function LandingPage() {
   return (
     <main className="flex flex-1 flex-col items-center gap-16 px-6 py-16">
+      {/* No page anywhere linked to /sign-in or /onboarding until now —
+          the whole authenticated flow was only reachable by typing the
+          URL by hand. */}
+      <a href="/sign-in" className="self-end text-sm underline">
+        Sign in
+      </a>
+
       <section className="flex max-w-2xl flex-col items-center gap-6 text-center">
         <h1 className="text-3xl font-semibold">
           Practice the interview out loud, before it counts.
@@ -39,6 +46,10 @@ export default function LandingPage() {
 
         <a href="/sample-scorecard" className="text-sm underline">
           See a sample scorecard
+        </a>
+
+        <a href="/onboarding" className="text-sm underline">
+          Practice with your own CV instead
         </a>
       </section>
 
