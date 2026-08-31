@@ -11,9 +11,17 @@ for actual interview prep.
 
 **Phase 0** (voice loop walking skeleton) and **Phase 1** (public demo +
 guardrails) are built and verified end-to-end against a live Gemini Live API
-session and a real Supabase project. Phases 2–5 — CV/JD intake and gap
-analysis, transcripts and scorecards, the gamified roadmap, and shipping —
-are not built yet. See [Roadmap](#roadmap) below.
+session and a real Supabase project.
+
+**Phase 2** (auth, CV/JD intake, gap analysis) is built but only partially
+verified: the two Gemini calls behind `/api/analyze` are each independently
+confirmed against the real API with a synthetic CV, but the full route
+(auth → storage → DB writes → both calls chained) hasn't run end-to-end yet
+— that needs a real signed-in session, and the day's free-tier Gemini quota
+ran out mid-verification. See [Known gaps and risks](#known-gaps-and-risks).
+
+Phases 3–5 — transcripts and scorecards, the gamified roadmap, and shipping
+— are not built yet. See [Roadmap](#roadmap) below.
 
 ## What's here right now
 
@@ -23,6 +31,10 @@ are not built yet. See [Roadmap](#roadmap) below.
 - **A public, guardrailed demo.** Cloudflare Turnstile bot-check, per-IP and
   global daily rate limits, and a kill switch — all enforced server-side,
   fail-closed, before an ephemeral Gemini token is ever minted.
+- **Magic-link auth** (Supabase) gating the authenticated app routes.
+- **CV/JD intake and gap analysis.** Upload a CV, paste a job description,
+  get back structured candidate/role/gap data and 4 interview stages with
+  question banks — built from the CV's actual content, not a template.
 - **A full Postgres schema** (Supabase), RLS enabled on every table from the
   first migration, not retrofitted.
 
@@ -44,9 +56,24 @@ are not built yet. See [Roadmap](#roadmap) below.
   devtools.
 - **Database.** Supabase/Postgres. `usage_counters` is RLS-enabled with *no*
   policies by design — it's touched exclusively by the service-role client.
+  Everything else (documents, roadmaps, stages, progress) goes through the
+  session-scoped client instead, so RLS enforces per-user access — the
+  service-role client is only for Phase 1's anonymous demo sessions.
 - **Guardrails.** Kill switch → global daily cap → per-IP hourly cap →
   Turnstile → record session, in that order, all server-side, all
   fail-closed on error.
+- **Auth.** Supabase magic-link (passwordless email). Next.js 16 renamed
+  `middleware.ts` to `proxy.ts` — session refresh and the route guard live
+  there. `getClaims()`, not `getSession()`, gates access: the latter's user
+  object isn't cryptographically verified server-side.
+- **Gap analysis.** One Gemini call with the CV as an inline PDF part plus
+  the JD as text, structured output via a JSON schema derived from Zod
+  (`zod`'s native `toJSONSchema`). One exception: Gemini's structured output
+  has an undocumented complexity budget that the full schema exceeds when
+  `stages[].questions[].follow_ups[]` is included alongside the rest —
+  confirmed by bisecting against the live API. That one field is generated
+  in a second, cheap, text-only call and merged in — see the comment in
+  `lib/gemini/analyze-gap.ts` for the full story.
 
 ## Key decisions (and why)
 
@@ -56,6 +83,8 @@ are not built yet. See [Roadmap](#roadmap) below.
 | Backend | Next.js Route Handlers only | One deploy target |
 | TTFA measurement | Server signal when available, local energy-based fallback otherwise | Gemini's `voiceActivityDetectionSignal` is allowlist-gated and not available on every project |
 | Live model | Verify against `models.list` before deploying | Live model IDs churn — this repo has already hit one rename mid-build |
+| `GEMINI_API_KEY` billing tier | Stayed on free tier; added a notice instead | The spec's own fallback option — see [Known gaps and risks](#known-gaps-and-risks) |
+| Gap-analysis output | Two Gemini calls (primary + follow-ups), not one | The spec calls for one call, but the full schema exceeds Gemini's structured-output complexity budget — see Architecture above |
 
 ## Setup
 
@@ -68,10 +97,14 @@ Fill in `.env.local`:
 
 - **`GEMINI_API_KEY`** — from [AI Studio](https://aistudio.google.com).
   Confirm the billing tier before pointing this at anything containing a
-  real CV — on the free tier, input may be used for model training.
-- **`GEMINI_LIVE_MODEL`** — verify the current value against a live
-  `models.list` call for your account. Model availability varies by project
-  and changes over time.
+  real CV — on the free tier, input may be used for model training, and
+  this repo's own key is confirmed running on it (20 requests/model/day).
+  Enable paid billing to remove both the data-usage risk and the cap, or
+  leave the onboarding page's notice in place if you don't.
+- **`GEMINI_LIVE_MODEL`**, **`GEMINI_TEXT_MODEL`** — verify both current
+  values against a live `models.list` call for your account before relying
+  on the checked-in defaults. Model availability varies by project and
+  changes over time; this repo has already hit both mid-build.
 - **`NEXT_PUBLIC_SUPABASE_URL`**, **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**,
   **`SUPABASE_SERVICE_ROLE_KEY`** — from your Supabase project's API
   settings. Apply the migrations in `supabase/migrations/` in order.
@@ -82,20 +115,49 @@ Fill in `.env.local`:
 - **`IP_HASH_SALT`** — any random string. Not from the original spec's env
   list verbatim, but required to compute `sessions.ip_hash`.
 
+One manual dashboard step `.env` can't cover: in Supabase, under
+**Auth → Emails → Magic Link**, change the confirmation link to
+`{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email` so it
+matches `app/auth/confirm/route.ts`.
+
 ```bash
 npm run dev
 ```
 
 - `/session/[id]` — a manual, unguarded connectivity test for the voice
-  loop (`mode: 'full'`). Displays live TTFA/median/p90.
+  loop (`mode: 'full'`, gated behind sign-in as of Phase 2). Displays live
+  TTFA/median/p90.
 - `/demo` — the real public flow: language toggle, Turnstile, mic
   permission, a 2-minute countdown.
+- `/sign-in` → `/onboarding` — sign in with a magic link, then upload a CV
+  and paste a job description to generate a roadmap.
 
 ## Known gaps and risks
 
-- **No auth yet.** `mode: 'full'` session requests have no guard until
-  Phase 2 adds one — right now they're only reachable by knowing the
-  endpoint, not by anyone browsing the deployed site.
+- **`GEMINI_API_KEY` is on the free tier.** Confirmed via a real quota-exceeded
+  error (`generate_content_free_tier_requests`, 20/day per model) — this is
+  the exact check specs §2 flagged as something to verify *before Phase 0*,
+  which never happened until Phase 2's testing surfaced it directly. Current
+  mitigation is the onboarding page's data-usage notice, not paid billing —
+  that was a deliberate choice, not an oversight, but it means real CV
+  content may be used to improve Google's models, and the 20/day cap is a
+  real operational limit (gap analysis alone uses 2 calls per attempt).
+- **`/api/analyze` hasn't run end-to-end yet.** The two Gemini calls behind
+  it are each independently verified against the real API; the full route —
+  real auth session, Storage upload, all four DB inserts, both calls
+  chained — is not. Needs a real signed-in user to exercise (the magic link
+  requires clicking through a real inbox) and the day's Gemini quota was
+  exhausted mid-verification.
+- **The Gemini structured-output complexity budget is undocumented.** The
+  two-call split works for the current schema; if `GapAnalysis` grows
+  another nested field, it may need to move into whichever call has more
+  headroom, or split further. No documented number to design against — this
+  was found by bisection, not a published limit.
+- **No guard on `mode: 'full'` session requests below the app layout.** The
+  proxy and layout auth checks cover the page routes; `/api/live/token`
+  itself still accepts `mode: 'full'` from anyone who knows the endpoint,
+  same as Phase 1 — that's a real auth check on the *session-creation*
+  path (`POST /api/sessions`, Phase 3), not the token endpoint itself.
 - **TTFA's local fallback is a heuristic, not ground truth.** It infers
   end-of-speech from mic energy dropping for ~800ms, mirroring the server's
   own `silenceDurationMs` — useful for a sanity check, not a rigorous
@@ -109,7 +171,8 @@ npm run dev
 
 - [x] Phase 0 — voice loop walking skeleton
 - [x] Phase 1 — public demo + guardrails
-- [ ] Phase 2 — CV/JD intake and gap analysis
+- [x] Phase 2 — CV/JD intake and gap analysis (built, not yet fully
+      end-to-end verified — see Known gaps and risks)
 - [ ] Phase 3 — transcripts and scorecards
 - [ ] Phase 4 — gamified roadmap
 - [ ] Phase 5 — ship
