@@ -1,1 +1,9 @@
-// Phase 1+ — browser Supabase client (anon key). Not needed until auth exists.
+import { createBrowserClient } from "@supabase/ssr";
+
+// Browser Supabase client (anon key) — Client Components only.
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+}
