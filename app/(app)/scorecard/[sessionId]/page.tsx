@@ -1,13 +1,44 @@
-// Phase 3 §7.4 — scorecard UI: score ring, STAR radar, strengths, transcript.
+import { notFound } from "next/navigation";
+
+import { createClient } from "@/lib/supabase/server";
+import { ScorecardView } from "@/components/scorecard/ScorecardView";
+
+// specs §7.4 — score ring/stars/XP/verdict above the fold; STAR radar,
+// communication metrics with reference ranges, strengths, improvements,
+// model answers, and the full transcript below.
 export default async function ScorecardPage({
   params,
 }: {
   params: Promise<{ sessionId: string }>;
 }) {
   const { sessionId } = await params;
+  const supabase = await createClient();
+
+  const { data: scorecard } = await supabase
+    .from("scorecards")
+    .select("*")
+    .eq("session_id", sessionId)
+    .maybeSingle();
+
+  if (!scorecard) notFound();
+
+  const { data: turns } = await supabase
+    .from("turns")
+    .select("role, transcript")
+    .eq("session_id", sessionId)
+    .order("order_index", { ascending: true });
+
   return (
-    <main className="flex flex-1 items-center justify-center p-16">
-      <p className="text-zinc-500">Scorecard {sessionId} — built in Phase 3.</p>
-    </main>
+    <ScorecardView
+      overall={scorecard.overall}
+      stars={scorecard.stars}
+      xpAwarded={scorecard.xp_awarded}
+      star={scorecard.star}
+      communication={scorecard.communication}
+      strengths={scorecard.strengths}
+      improvements={scorecard.improvements}
+      modelAnswers={scorecard.model_answers}
+      turns={turns ?? []}
+    />
   );
 }
