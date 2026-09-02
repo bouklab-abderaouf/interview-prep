@@ -13,14 +13,21 @@ for actual interview prep.
 guardrails) are built and verified end-to-end against a live Gemini Live API
 session and a real Supabase project.
 
-**Phase 2** (auth, CV/JD intake, gap analysis) and **Phase 3** (turn capture,
-deterministic metrics, Gemini scoring, scorecard UI) are built. Both share
-the same verification gap: the two Gemini calls behind `/api/analyze` and
-the full scoring pipeline are each independently confirmed against the real
-API, and the scorecard UI is confirmed rendering correctly end-to-end via
-the static `/sample-scorecard` page — but the full authenticated chain
-(sign in → upload a CV → run a real interview → get scored) hasn't run
-start-to-finish yet. See [Known gaps and risks](#known-gaps-and-risks).
+**Phase 2** (auth, CV/JD intake, gap analysis) is built and now verified
+**end-to-end with a real signed-in user, a real CV, and real Gemini calls**
+— sign in, upload, analyze, and the resulting roadmap/stages/progress rows
+confirmed correct in Postgres. Getting there surfaced two real bugs, both
+fixed: the magic-link confirm route only handled half of Supabase's actual
+auth flow (see git history for the ugly detail), and `stages` had no RLS
+INSERT policy at all — an out-of-the-box gap in the spec's own §3 SQL, not
+something introduced later, and one that also silently affected
+`scorecards` before anyone ever got that far.
+
+**Phase 3** (turn capture, deterministic metrics, Gemini scoring, scorecard
+UI) is built. The scoring pipeline and scorecard UI are each independently
+verified (the latter via the static `/sample-scorecard` page), but a full
+real interview session — connect, talk, capture turns, score — hasn't run
+start-to-finish yet; there's no UI trigger for it either (see Known gaps).
 
 Phases 4–5 — the gamified roadmap and shipping — are not built yet. See
 [Roadmap](#roadmap) below.
@@ -171,15 +178,17 @@ npm run dev
   that was a deliberate choice, not an oversight, but it means real CV
   content may be used to improve Google's models, and the 20/day cap is a
   real operational limit (gap analysis alone uses 2 calls per attempt).
-- **Nothing has run the full authenticated chain end-to-end yet.**
-  `/api/analyze`'s two Gemini calls, and the scoring pipeline's one call,
-  are each independently verified against the real API; the scorecard UI
-  is verified rendering correctly via the static `/sample-scorecard` page.
-  What's *not* yet verified is the whole chain in one run — sign in, upload
-  a real CV, run a real interview, get scored — since that needs a real
-  signed-in user (the magic link requires clicking through a real inbox)
-  and the free-tier Gemini quota (20 requests/model/day) has been the
-  limiting factor during development.
+- **The intake half of the chain is now verified end-to-end** (sign in →
+  upload a real CV → analyze → roadmap/stages/progress in Postgres,
+  confirmed with real data, real auth, real Gemini calls). **The interview
+  half isn't yet**: run a real session, capture turns, score it — no UI
+  triggers that path yet (see below), and the free-tier Gemini quota
+  (20 requests/model/day) has been the limiting factor during development.
+- **A failed `/api/analyze` attempt leaves an orphaned `roadmaps` row.**
+  Documents and the roadmap insert happen before stages; if anything after
+  that fails, there's no cleanup. Harmless (nothing reads a roadmap with 0
+  stages), just clutter — worth a transaction or explicit cleanup later,
+  not urgent now.
 - **The Gemini structured-output complexity budget is undocumented.** The
   two-call split works for `GapAnalysis`; `Scorecard` stays one call
   because it's shallow enough not to hit the same budget. If either schema
@@ -212,9 +221,9 @@ npm run dev
 
 - [x] Phase 0 — voice loop walking skeleton
 - [x] Phase 1 — public demo + guardrails
-- [x] Phase 2 — CV/JD intake and gap analysis (built, not yet fully
-      end-to-end verified — see Known gaps and risks)
-- [x] Phase 3 — transcripts and scorecards (built, not yet fully
-      end-to-end verified — see Known gaps and risks)
+- [x] Phase 2 — CV/JD intake and gap analysis (verified end-to-end with a
+      real user, real CV, real Gemini calls)
+- [x] Phase 3 — transcripts and scorecards (built; the interview-session
+      half not yet run end-to-end — see Known gaps and risks)
 - [ ] Phase 4 — gamified roadmap
 - [ ] Phase 5 — ship
