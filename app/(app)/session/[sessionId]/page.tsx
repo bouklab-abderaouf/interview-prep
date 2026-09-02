@@ -50,6 +50,11 @@ export default function SessionPage({
   const playerRef = useRef<AudioPlayerHandle | null>(null);
   const activityEndAtRef = useRef<number | null>(null);
   const awaitingFirstAudioRef = useRef(false);
+  // Guards against onClose's own status update racing (and clobbering)
+  // stop()'s flush/score sequence — both run when a session ends, since
+  // closing the Live session triggers the WebSocket's close event
+  // asynchronously while stop() keeps executing past that point.
+  const endingRef = useRef(false);
 
   // Turn capture (specs §7.1) — only meaningful for a real session.
   const sessionStartRef = useRef<number | null>(null);
@@ -61,6 +66,33 @@ export default function SessionPage({
   const appendTranscript = useCallback((line: TranscriptLine) => {
     setTranscript((prev) => [...prev, line]);
   }, []);
+
+  // Moves whatever's been accumulated for a role into a finished turn. Called
+  // both opportunistically from a transcription chunk marked `finished`
+  // (unverified in practice whether the API reliably sets this) and — the
+  // mechanism this now actually depends on — from turn-boundary signals
+  // already proven to fire: activity-end for the candidate, turnComplete for
+  // the interviewer. The startMs === null guard makes calling this from
+  // multiple triggers for the same turn safe: whichever fires first flushes
+  // and resets the accumulator, so a later trigger for the same turn is a
+  // harmless no-op instead of a duplicate push.
+  const flushAccumulatedTurn = useCallback(
+    (role: "interviewer" | "candidate", accRef: React.RefObject<TurnAccumulator>) => {
+      if (accRef.current.startMs === null || !accRef.current.text.trim()) return;
+      const now = performance.now();
+      const sessionStart = sessionStartRef.current ?? now;
+      const turn: Turn = {
+        role,
+        transcript: accRef.current.text,
+        start_ms: Math.round(accRef.current.startMs),
+        end_ms: Math.round(now - sessionStart),
+      };
+      turnsRef.current.push(turn);
+      accRef.current = { text: "", startMs: null };
+      appendTranscript({ role, text: turn.transcript });
+    },
+    [appendTranscript],
+  );
 
   // Shared by the server's real voiceActivityDetectionSignal (allowlist-gated,
   // usually silent — see lib/live/client.ts) and the local energy-based
@@ -95,21 +127,9 @@ export default function SessionPage({
         accRef.current.startMs = now - sessionStart;
       }
       accRef.current.text += text;
-
-      if (finished) {
-        const endMs = now - sessionStart;
-        if (accRef.current.text.trim()) {
-          turnsRef.current.push({
-            role,
-            transcript: accRef.current.text,
-            start_ms: Math.round(accRef.current.startMs),
-            end_ms: Math.round(endMs),
-          });
-        }
-        accRef.current = { text: "", startMs: null };
-      }
+      if (finished) flushAccumulatedTurn(role, accRef);
     },
-    [],
+    [flushAccumulatedTurn],
   );
 
   const flushTurns = useCallback(
@@ -143,8 +163,13 @@ export default function SessionPage({
   }, [isRealSession, flushTurns]);
 
   const stop = useCallback(async () => {
+    endingRef.current = true;
     if (flushIntervalRef.current) clearInterval(flushIntervalRef.current);
     flushIntervalRef.current = null;
+    // Flush whatever's still mid-turn (e.g. the interviewer was talking when
+    // the user hit Stop) before it's lost.
+    flushAccumulatedTurn("candidate", candidateAccRef);
+    flushAccumulatedTurn("interviewer", interviewerAccRef);
     recorderRef.current?.stop();
     recorderRef.current = null;
     playerRef.current?.close();
@@ -169,13 +194,16 @@ export default function SessionPage({
     }
 
     setStatus("idle");
-  }, [isRealSession, sessionId, flushTurns, router]);
+  }, [isRealSession, sessionId, flushTurns, flushAccumulatedTurn, router]);
 
   const start = useCallback(async () => {
     setErrorMessage(null);
     setStatus("connecting");
+    endingRef.current = false;
     sessionStartRef.current = performance.now();
     turnsRef.current = [];
+    candidateAccRef.current = { text: "", startMs: null };
+    interviewerAccRef.current = { text: "", startMs: null };
 
     try {
       const tokenRes = await fetch("/api/live/token", {
@@ -213,7 +241,15 @@ export default function SessionPage({
           }
         },
 
-        onActivityEnd: markActivityEnd,
+        onActivityEnd: () => {
+          markActivityEnd();
+          // The reliable turn-boundary signal for the candidate — see
+          // flushAccumulatedTurn's comment on why this doesn't depend on
+          // the transcription API's own `finished` flag actually firing.
+          flushAccumulatedTurn("candidate", candidateAccRef);
+        },
+
+        onTurnComplete: () => flushAccumulatedTurn("interviewer", interviewerAccRef),
 
         onInterrupted: () => {
           player.interrupt();
@@ -222,13 +258,11 @@ export default function SessionPage({
         onInputTranscript: (text, finished) => {
           console.log("[candidate]", text, finished ? "(final)" : "");
           captureTranscriptChunk("candidate", candidateAccRef, text, finished);
-          if (finished) appendTranscript({ role: "candidate", text: candidateAccRef.current.text || text });
         },
 
         onOutputTranscript: (text, finished) => {
           console.log("[interviewer]", text, finished ? "(final)" : "");
           captureTranscriptChunk("interviewer", interviewerAccRef, text, finished);
-          if (finished) appendTranscript({ role: "interviewer", text: interviewerAccRef.current.text || text });
         },
 
         onError: (error) => {
@@ -239,6 +273,10 @@ export default function SessionPage({
 
         onClose: (info) => {
           console.error("[live session] closed", info);
+          // stop() is already mid-flush/score for this close — don't let a
+          // late, unrelated status update stomp over "scoring" or whatever
+          // stop() lands on when it finishes.
+          if (endingRef.current) return;
           if (!info.wasClean || info.code !== 1000) {
             setErrorMessage(
               `session closed: code ${info.code}${info.reason ? ` — ${info.reason}` : ""}`,
@@ -255,7 +293,10 @@ export default function SessionPage({
       recorderRef.current = await startRecording({
         onChunk: (chunk) => sendAudioChunk(session, chunk),
         onLocalActivityStart: cancelPendingActivityEnd,
-        onLocalActivityEnd: markActivityEnd,
+        onLocalActivityEnd: () => {
+          markActivityEnd();
+          flushAccumulatedTurn("candidate", candidateAccRef);
+        },
         onError: (error) => console.error("[recorder]", error),
       });
     } catch (error) {
@@ -264,7 +305,16 @@ export default function SessionPage({
       setStatus("error");
       void stop();
     }
-  }, [appendTranscript, cancelPendingActivityEnd, captureTranscriptChunk, flushTurns, isRealSession, markActivityEnd, stageId, stop]);
+  }, [
+    cancelPendingActivityEnd,
+    captureTranscriptChunk,
+    flushAccumulatedTurn,
+    flushTurns,
+    isRealSession,
+    markActivityEnd,
+    stageId,
+    stop,
+  ]);
 
   const median = percentile(ttfaSamples, 0.5);
   const p90 = percentile(ttfaSamples, 0.9);
