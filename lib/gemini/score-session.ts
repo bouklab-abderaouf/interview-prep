@@ -3,6 +3,7 @@ import { toJSONSchema } from "zod";
 
 import { Scorecard, type Scorecard as ScorecardType } from "@/lib/gemini/schemas";
 import { buildScoringPrompt } from "@/lib/prompts/scoring";
+import { withRetry } from "@/lib/gemini/retry";
 import type { Turn, DeterministicMetrics } from "@/lib/metrics/deterministic";
 import type { InterviewLanguage } from "@/lib/live/types";
 
@@ -38,11 +39,13 @@ export async function scoreSession(params: {
   const client = new GoogleGenAI({ apiKey });
   const prompt = buildScoringPrompt(params);
 
-  const response = await client.models.generateContent({
-    model,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: { responseMimeType: "application/json", responseJsonSchema },
-  });
+  const response = await withRetry(() =>
+    client.models.generateContent({
+      model,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { responseMimeType: "application/json", responseJsonSchema },
+    }),
+  );
 
   const text = response.text;
   if (!text) throw new Error("Gemini returned no text content");

@@ -5,6 +5,7 @@ import { z, toJSONSchema } from "zod";
 
 import { GapAnalysis, type GapAnalysis as GapAnalysisType } from "@/lib/gemini/schemas";
 import { buildGapAnalysisPrompt } from "@/lib/prompts/gap-analysis";
+import { withRetry } from "@/lib/gemini/retry";
 import type { InterviewLanguage } from "@/lib/live/types";
 
 // specs §6.2 — cache keyed on hash(cv_bytes + jd_text + language) so re-runs
@@ -80,19 +81,21 @@ async function generatePrimary(
   jdText: string,
   language: InterviewLanguage,
 ): Promise<GapAnalysisPrimaryType> {
-  const response = await client.models.generateContent({
-    model,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: buildGapAnalysisPrompt({ jdText, language }) },
-          { inlineData: { data: cvBytes.toString("base64"), mimeType: "application/pdf" } },
-        ],
-      },
-    ],
-    config: { responseMimeType: "application/json", responseJsonSchema: primaryResponseSchema },
-  });
+  const response = await withRetry(() =>
+    client.models.generateContent({
+      model,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: buildGapAnalysisPrompt({ jdText, language }) },
+            { inlineData: { data: cvBytes.toString("base64"), mimeType: "application/pdf" } },
+          ],
+        },
+      ],
+      config: { responseMimeType: "application/json", responseJsonSchema: primaryResponseSchema },
+    }),
+  );
 
   const text = response.text;
   if (!text) throw new Error("Gemini returned no text content (primary call)");
@@ -119,11 +122,13 @@ async function generateFollowUps(
     ),
   ].join("\n");
 
-  const response = await client.models.generateContent({
-    model,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: { responseMimeType: "application/json", responseJsonSchema: followUpsResponseSchema },
-  });
+  const response = await withRetry(() =>
+    client.models.generateContent({
+      model,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { responseMimeType: "application/json", responseJsonSchema: followUpsResponseSchema },
+    }),
+  );
 
   const text = response.text;
   if (!text) throw new Error("Gemini returned no text content (follow-ups call)");
