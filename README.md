@@ -91,9 +91,16 @@ Phases 4–5 — the gamified roadmap and shipping — are not built yet. See
   `lib/gemini/analyze-gap.ts` for the full story.
 - **Turn capture.** `inputAudioTranscription`/`outputAudioTranscription`
   arrive as incremental deltas, not full turn text — concatenated per-role
-  until the server marks a turn `finished`, timestamped relative to session
-  start. Flushed to Postgres on a 60s safety timer, on session end, and on
-  tab close via `fetch(..., {keepalive: true})` — not
+  and timestamped relative to session start. A turn closes out on
+  activity-end for the candidate and `turnComplete` for the interviewer —
+  signals already proven reliable — not solely on the transcription API's
+  own `finished` flag, which turned out not to reliably fire in practice
+  (a real bug: a full interview produced zero captured turns before this
+  was found). A response watchdog separately flags when the interviewer
+  goes silent for 12s after the candidate stops talking — usually a Live
+  API free-tier quota issue, confirmed by bisecting directly against the
+  API, not a prompt problem. Flushed to Postgres on a 60s safety timer, on
+  session end, and on tab close via `fetch(..., {keepalive: true})` — not
   `navigator.sendBeacon`, which is POST-only and can't carry the PATCH this
   needs.
 - **Scoring.** One Gemini call — transcript, stage focus areas/question
@@ -170,20 +177,35 @@ npm run dev
 
 ## Known gaps and risks
 
-- **`GEMINI_API_KEY` is on the free tier.** Confirmed via a real quota-exceeded
-  error (`generate_content_free_tier_requests`, 20/day per model) — this is
-  the exact check specs §2 flagged as something to verify *before Phase 0*,
-  which never happened until Phase 2's testing surfaced it directly. Current
-  mitigation is the onboarding page's data-usage notice, not paid billing —
-  that was a deliberate choice, not an oversight, but it means real CV
-  content may be used to improve Google's models, and the 20/day cap is a
-  real operational limit (gap analysis alone uses 2 calls per attempt).
-- **The intake half of the chain is now verified end-to-end** (sign in →
+- **`GEMINI_API_KEY` is on the free tier — and it's confirmed constraining
+  more than just CV analysis.** The text model's cap
+  (`generate_content_free_tier_requests`, 20/day) was the first one hit;
+  since then, the **Live API's own separate free-tier quota** was also
+  exhausted mid-testing (`1011 — You exceeded your current quota`),
+  meaning real spoken interviews can silently stop getting replies, not
+  just gap analysis. This is the exact check specs §2 flagged as something
+  to verify *before Phase 0*, which never happened. Current mitigation is
+  the onboarding page's data-usage notice, not paid billing — a deliberate
+  choice, kept even after this got confirmed to affect the core interview
+  feature, not just an auxiliary pipeline.
+- **A Live session can go silent with zero error signal.** When its quota
+  is exhausted, the API doesn't reliably error — confirmed by bisecting
+  directly against it: the exact same config that got a full audio reply
+  seconds earlier later produced nothing at all (no audio, no text, no
+  close event) before an explicit `1011` close eventually showed up on a
+  later attempt. `/session/[id]` now runs a 12s watchdog after the
+  candidate stops talking and surfaces a visible warning if no reply
+  audio shows up — the interviewer prompt itself was never the problem
+  (verified: it works fine with quota available), but the app previously
+  gave zero feedback when it wasn't.
+- **The intake half of the chain is verified end-to-end** (sign in →
   upload a real CV → analyze → roadmap/stages/progress in Postgres,
-  confirmed with real data, real auth, real Gemini calls). **The interview
-  half isn't yet**: run a real session, capture turns, score it — no UI
-  triggers that path yet (see below), and the free-tier Gemini quota
-  (20 requests/model/day) has been the limiting factor during development.
+  confirmed with real data, real auth, real Gemini calls) — including
+  finding and fixing a real RLS gap (`stages` and `scorecards` only ever
+  had a SELECT policy in the spec's own §3 SQL, never INSERT). **A full
+  interview session — connect, talk, capture turns, score — has started
+  successfully but hasn't completed successfully yet**, blocked by the
+  Live API quota above rather than by any known code bug at this point.
 - **A failed `/api/analyze` attempt leaves an orphaned `roadmaps` row.**
   Documents and the roadmap insert happen before stages; if anything after
   that fails, there's no cleanup. Harmless (nothing reads a roadmap with 0
