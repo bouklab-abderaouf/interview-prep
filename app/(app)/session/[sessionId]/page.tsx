@@ -28,6 +28,13 @@ interface TurnAccumulator {
 }
 
 const FLUSH_INTERVAL_MS = 60_000;
+// How long to wait after the candidate stops talking before flagging that
+// the interviewer seems stuck — found from a real bug: the Live API can go
+// silent with zero error (no close event, no audio, nothing) when its
+// free-tier quota is exhausted, confirmed by bisecting against the live API
+// with the exact same config that worked moments earlier. Without this, that
+// state is indistinguishable from the app being broken.
+const RESPONSE_WATCHDOG_MS = 12_000;
 
 export default function SessionPage({
   params,
@@ -41,6 +48,7 @@ export default function SessionPage({
 
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [stalledWarning, setStalledWarning] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
   const [ttfaSamples, setTtfaSamples] = useState<number[]>([]);
   const [lastTtfa, setLastTtfa] = useState<number | null>(null);
@@ -50,6 +58,7 @@ export default function SessionPage({
   const playerRef = useRef<AudioPlayerHandle | null>(null);
   const activityEndAtRef = useRef<number | null>(null);
   const awaitingFirstAudioRef = useRef(false);
+  const responseWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Guards against onClose's own status update racing (and clobbering)
   // stop()'s flush/score sequence — both run when a session ends, since
   // closing the Live session triggers the WebSocket's close event
@@ -105,6 +114,24 @@ export default function SessionPage({
     awaitingFirstAudioRef.current = true;
   }, []);
 
+  // Starts a timer when the candidate stops talking; if no reply audio shows
+  // up before it fires, surfaces a visible warning instead of leaving the
+  // UI looking broken with no explanation.
+  const startResponseWatchdog = useCallback(() => {
+    if (responseWatchdogRef.current) clearTimeout(responseWatchdogRef.current);
+    responseWatchdogRef.current = setTimeout(() => {
+      setStalledWarning(
+        "No response yet after 12s. This is usually a transient Live API issue or a free-tier quota limit, not a problem with your answer — check the console, or try again in a bit.",
+      );
+    }, RESPONSE_WATCHDOG_MS);
+  }, []);
+
+  const clearResponseWatchdog = useCallback(() => {
+    if (responseWatchdogRef.current) clearTimeout(responseWatchdogRef.current);
+    responseWatchdogRef.current = null;
+    setStalledWarning(null);
+  }, []);
+
   // If speech resumes before any reply audio arrived, the pending anchor was
   // a false positive (a mid-sentence pause past SILENCE_HANGOVER_MS, not a
   // real end of turn) — drop it so a stale timestamp doesn't inflate the next
@@ -113,7 +140,8 @@ export default function SessionPage({
   const cancelPendingActivityEnd = useCallback(() => {
     awaitingFirstAudioRef.current = false;
     activityEndAtRef.current = null;
-  }, []);
+    clearResponseWatchdog();
+  }, [clearResponseWatchdog]);
 
   // inputAudioTranscription/outputAudioTranscription arrive as incremental
   // deltas, not the full turn text — concatenate until `finished`, then
@@ -162,8 +190,15 @@ export default function SessionPage({
     return () => window.removeEventListener("beforeunload", handler);
   }, [isRealSession, flushTurns]);
 
+  useEffect(() => {
+    return () => {
+      if (responseWatchdogRef.current) clearTimeout(responseWatchdogRef.current);
+    };
+  }, []);
+
   const stop = useCallback(async () => {
     endingRef.current = true;
+    clearResponseWatchdog();
     if (flushIntervalRef.current) clearInterval(flushIntervalRef.current);
     flushIntervalRef.current = null;
     // Flush whatever's still mid-turn (e.g. the interviewer was talking when
@@ -194,10 +229,11 @@ export default function SessionPage({
     }
 
     setStatus("idle");
-  }, [isRealSession, sessionId, flushTurns, flushAccumulatedTurn, router]);
+  }, [isRealSession, sessionId, flushTurns, flushAccumulatedTurn, clearResponseWatchdog, router]);
 
   const start = useCallback(async () => {
     setErrorMessage(null);
+    clearResponseWatchdog();
     setStatus("connecting");
     endingRef.current = false;
     sessionStartRef.current = performance.now();
@@ -232,6 +268,7 @@ export default function SessionPage({
 
         onAudioChunk: (chunk) => {
           player.enqueue(chunk);
+          clearResponseWatchdog();
           if (awaitingFirstAudioRef.current && activityEndAtRef.current !== null) {
             const ttfa = performance.now() - activityEndAtRef.current;
             awaitingFirstAudioRef.current = false;
@@ -243,6 +280,7 @@ export default function SessionPage({
 
         onActivityEnd: () => {
           markActivityEnd();
+          startResponseWatchdog();
           // The reliable turn-boundary signal for the candidate — see
           // flushAccumulatedTurn's comment on why this doesn't depend on
           // the transcription API's own `finished` flag actually firing.
@@ -267,12 +305,14 @@ export default function SessionPage({
 
         onError: (error) => {
           console.error("[live session] error", error);
+          clearResponseWatchdog();
           setErrorMessage(String(error));
           setStatus("error");
         },
 
         onClose: (info) => {
           console.error("[live session] closed", info);
+          clearResponseWatchdog();
           // stop() is already mid-flush/score for this close — don't let a
           // late, unrelated status update stomp over "scoring" or whatever
           // stop() lands on when it finishes.
@@ -295,6 +335,7 @@ export default function SessionPage({
         onLocalActivityStart: cancelPendingActivityEnd,
         onLocalActivityEnd: () => {
           markActivityEnd();
+          startResponseWatchdog();
           flushAccumulatedTurn("candidate", candidateAccRef);
         },
         onError: (error) => console.error("[recorder]", error),
@@ -308,11 +349,13 @@ export default function SessionPage({
   }, [
     cancelPendingActivityEnd,
     captureTranscriptChunk,
+    clearResponseWatchdog,
     flushAccumulatedTurn,
     flushTurns,
     isRealSession,
     markActivityEnd,
     stageId,
+    startResponseWatchdog,
     stop,
   ]);
 
@@ -350,6 +393,7 @@ export default function SessionPage({
       </div>
 
       {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+      {stalledWarning && <p className="text-sm text-amber-600">{stalledWarning}</p>}
 
       <ul className="flex flex-col gap-1 text-sm">
         {transcript.map((line, index) => (
