@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
-import { StartStageButton } from "@/components/roadmap/StartStageButton";
+import { SkillTree } from "@/components/roadmap/SkillTree";
+import { XpBar } from "@/components/roadmap/XpBar";
+import type { RoadmapStage, StageProgress } from "@/components/roadmap/types";
 
-// Phase 4 §8.1 minimal slice — just enough to list a roadmap's 4 stages and
-// start an unlocked one, so Phase 3's session/turn-capture/scoring path has
-// a real UI trigger to verify against. The real skill tree (serpentine
-// path, node states, Framer Motion) is still to come.
+// specs §8.1 — skill tree with four stage nodes, XP bar and streak counter in
+// the header. All state is read from Postgres per request, so §8's
+// "progression state survives a hard refresh" is structural rather than
+// something the client has to persist.
 export default async function RoadmapPage({
   params,
 }: {
@@ -24,9 +26,10 @@ export default async function RoadmapPage({
 
   const { data: stages } = await supabase
     .from("stages")
-    .select("id, order_index, slug, title, description, pass_score")
+    .select("id, order_index, slug, title, description, focus_areas, pass_score")
     .eq("roadmap_id", roadmapId)
-    .order("order_index", { ascending: true });
+    .order("order_index", { ascending: true })
+    .returns<RoadmapStage[]>();
 
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = claimsData?.claims.sub;
@@ -36,47 +39,35 @@ export default async function RoadmapPage({
         .from("progress")
         .select("stage_id, unlocked, attempts, best_score, stars")
         .eq("user_id", userId)
+        .returns<(StageProgress & { stage_id: string })[]>()
     : { data: null };
 
-  const progressByStageId = new Map((progressRows ?? []).map((p) => [p.stage_id, p]));
+  const { data: profile } = userId
+    ? await supabase
+        .from("profiles")
+        .select("total_xp, streak_days")
+        .eq("id", userId)
+        .maybeSingle<{ total_xp: number; streak_days: number }>()
+    : { data: null };
+
+  const progressByStageId = Object.fromEntries(
+    (progressRows ?? []).map(({ stage_id, ...progress }) => [stage_id, progress]),
+  );
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
-      <h1 className="text-xl font-medium">
-        {roadmap.target_role}
-        {roadmap.company ? ` at ${roadmap.company}` : ""}
-      </h1>
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-8">
+      <header className="flex flex-col gap-4">
+        <div>
+          <h1 className="text-xl font-medium">
+            {roadmap.target_role}
+            {roadmap.company ? ` at ${roadmap.company}` : ""}
+          </h1>
+          <p className="text-sm text-zinc-500">Four stages. Clear one to unlock the next.</p>
+        </div>
+        <XpBar totalXp={profile?.total_xp ?? 0} streakDays={profile?.streak_days ?? 0} />
+      </header>
 
-      <ul className="flex flex-col gap-4">
-        {(stages ?? []).map((stage) => {
-          const progress = progressByStageId.get(stage.id);
-          const unlocked = progress?.unlocked ?? false;
-          return (
-            <li key={stage.id} className="rounded border border-zinc-200 p-4 dark:border-zinc-800">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-medium">
-                    {stage.order_index + 1}. {stage.title}
-                  </p>
-                  <p className="text-sm text-zinc-500">{stage.description}</p>
-                  {progress && (
-                    <p className="mt-1 text-xs text-zinc-400">
-                      {progress.attempts} attempt{progress.attempts === 1 ? "" : "s"}
-                      {progress.best_score !== null ? ` · best ${progress.best_score}` : ""}
-                      {progress.stars > 0 ? ` · ${"★".repeat(progress.stars)}` : ""}
-                    </p>
-                  )}
-                </div>
-                {unlocked ? (
-                  <StartStageButton stageId={stage.id} />
-                ) : (
-                  <span className="text-sm text-zinc-400">Locked</span>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      <SkillTree stages={stages ?? []} progressByStageId={progressByStageId} />
     </main>
   );
 }

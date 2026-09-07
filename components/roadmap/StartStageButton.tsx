@@ -7,9 +7,9 @@ interface StartStageButtonProps {
   stageId: string;
 }
 
-// Phase 4 §8.1 minimal slice — POST /api/sessions then navigate to the
-// interview room. Enough to actually verify Phase 3's session/scoring path
-// end-to-end before the real skill tree exists.
+// specs §8.1 — the skill tree's "Start" action. POST /api/sessions, then
+// navigate to the interview room. Kept as its own client component so the
+// sheet around it stays presentational.
 export function StartStageButton({ stageId }: StartStageButtonProps) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "starting" | "error">("idle");
