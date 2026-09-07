@@ -163,5 +163,49 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
     }
   }
 
+  // specs §8.1 — the XP bar and streak counter read from profiles, so the
+  // XP awarded on the scorecard has to actually accumulate somewhere.
+  // Read-then-write rather than an atomic increment: this is a single user
+  // acting on their own row, one scored session at a time, so there's no
+  // realistic concurrent writer to race.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("total_xp, streak_days, last_active")
+    .eq("id", userId)
+    .maybeSingle<{ total_xp: number; streak_days: number; last_active: string | null }>();
+
+  if (profile) {
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .update({
+        total_xp: profile.total_xp + xpAwarded,
+        streak_days: nextStreak(profile.streak_days, profile.last_active),
+        last_active: todayUtc(),
+      })
+      .eq("id", userId);
+    if (profileError) {
+      // Non-fatal: the scorecard is already written and is the thing that
+      // matters. Losing XP on a rare failure beats failing the whole score.
+      console.error("[api/sessions/:id/score] profile xp update failed", profileError);
+    }
+  }
+
   return NextResponse.json({ scorecardId: scorecardRow.id });
+}
+
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Same UTC day: unchanged. Consecutive day: +1. Any longer gap (or a first
+// ever session): back to 1. specs §8.3 defers streak freezes, so a missed
+// day simply resets.
+function nextStreak(current: number, lastActive: string | null): number {
+  const today = todayUtc();
+  if (lastActive === today) return Math.max(current, 1);
+
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (lastActive === yesterday) return current + 1;
+
+  return 1;
 }
