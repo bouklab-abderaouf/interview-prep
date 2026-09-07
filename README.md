@@ -24,13 +24,18 @@ something introduced later, and one that also silently affected
 `scorecards` before anyone ever got that far.
 
 **Phase 3** (turn capture, deterministic metrics, Gemini scoring, scorecard
-UI) is built. The scoring pipeline and scorecard UI are each independently
-verified (the latter via the static `/sample-scorecard` page), but a full
-real interview session — connect, talk, capture turns, score — hasn't run
-start-to-finish yet; there's no UI trigger for it either (see Known gaps).
+UI) is built and **has now run start-to-finish against the live API**: two
+real sessions connected, captured turns, scored, and wrote `scorecards` rows
+with XP and stars. Both were *short* — the Live API's free-tier quota starves
+the interviewer after a couple of turns — so the pipeline is proven while the
+scores themselves aren't meaningful yet (see Known gaps).
 
-Phases 4–5 — the gamified roadmap and shipping — are not built yet. See
-[Roadmap](#roadmap) below.
+**Phase 4** (gamified roadmap) is built: the serpentine skill tree with
+locked/available/attempted nodes, an XP bar and streak counter, a stage
+detail sheet, and the Start button that launches a real interview. XP and
+streak now actually accumulate on `profiles` when a session is scored.
+
+Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
 
 ## What's here right now
 
@@ -50,6 +55,13 @@ Phases 4–5 — the gamified roadmap and shipping — are not built yet. See
   timestamps, and scores it into a scorecard on completion — STAR
   breakdown, deterministic communication metrics, grounded strengths and
   improvements, model answers, and XP/stage-unlock progression.
+- **A gamified roadmap.** `/roadmap/[id]` draws the four stages as a
+  serpentine skill tree — grey/locked with a lock icon, blue/pulsing when
+  available, amber with stars once attempted — over a progress path that
+  fills as stages unlock, plus an XP bar and streak counter. Tapping a node
+  opens a sheet with the stage's focus areas, best score, attempts, and
+  Start. Every bit of that state is read from Postgres per request, so it
+  survives a hard refresh by construction.
 - **A full Postgres schema** (Supabase), RLS enabled on every table from the
   first migration, not retrofitted.
 
@@ -110,6 +122,18 @@ Phases 4–5 — the gamified roadmap and shipping — are not built yet. See
   complexity budget `GapAnalysis` does, so this one stays a single call as
   specced. Every strength's quote is checked against the actual transcript
   and dropped if it isn't verbatim.
+- **Progression state.** There is no client-side game state: the skill tree
+  is a server component that reads `stages`, `progress`, and `profiles` on
+  every request and hands the client plain data. Unlocking is decided by
+  `/api/sessions/[id]/score` writing `progress`, never by the UI. The one
+  piece of client state is which node's sheet is open.
+- **Profile rows are created by a database trigger**, not by application
+  code. `profiles` is where XP and streaks live, but nothing ever inserted
+  into it — the spec's §3 schema defines the table and never creates a row
+  for a new user, so XP had nowhere to go. Migration `006` adds a
+  `SECURITY DEFINER` trigger on `auth.users` (and backfills existing users),
+  which is the only place a row can be created at signup time without
+  granting the client write access to it.
 
 ## Key decisions (and why)
 
@@ -123,6 +147,9 @@ Phases 4–5 — the gamified roadmap and shipping — are not built yet. See
 | Gap-analysis output | Two Gemini calls (primary + follow-ups), not one | The spec calls for one call, but the full schema exceeds Gemini's structured-output complexity budget — see Architecture above |
 | XP duration bonus | 1 XP per minute spent | The spec names `duration_bonus` in its XP formula without defining it — this is a documented reading, not a literal spec value |
 | Turn flush on tab close | `fetch(..., {keepalive: true})`, not `navigator.sendBeacon` | sendBeacon is POST-only; flushing turns needs PATCH |
+| XP per level | 500 | The spec has an XP formula but no level system; the bar needs *some* target, and this one is arbitrary and clearly marked as such in the code |
+| Skill-tree layout | Fixed coordinates, not measured DOM | Four nodes at known spacing make the serpentine path deterministic — no refs, layout effects, or resize observer |
+| Progress path fill | Plain `<path>` + CSS transition, not `motion.path` | Motion owns `strokeDasharray`/`strokeDashoffset` internally; animating them through it produced a path stuck at 3% of its target (verified in-browser) |
 
 ## Setup
 
@@ -171,8 +198,10 @@ npm run dev
 - `/demo` — the real public flow: language toggle, Turnstile, mic
   permission, a 2-minute countdown.
 - `/sign-in` → `/onboarding` — sign in with a magic link, then upload a CV
-  and paste a job description to generate a roadmap (Phase 4's UI for
-  starting a stage from that roadmap doesn't exist yet — see Known gaps).
+  and paste a job description to generate a roadmap.
+- `/roadmap/[roadmapId]` — the skill tree: XP bar, streak, four stage nodes,
+  and the Start button that creates a session and drops you into the
+  interview room.
 - `/sample-scorecard` — the scorecard UI on a fixture, no auth needed.
 
 ## Known gaps and risks
@@ -198,14 +227,22 @@ npm run dev
   audio shows up — the interviewer prompt itself was never the problem
   (verified: it works fine with quota available), but the app previously
   gave zero feedback when it wasn't.
-- **The intake half of the chain is verified end-to-end** (sign in →
-  upload a real CV → analyze → roadmap/stages/progress in Postgres,
-  confirmed with real data, real auth, real Gemini calls) — including
-  finding and fixing a real RLS gap (`stages` and `scorecards` only ever
-  had a SELECT policy in the spec's own §3 SQL, never INSERT). **A full
-  interview session — connect, talk, capture turns, score — has started
-  successfully but hasn't completed successfully yet**, blocked by the
-  Live API quota above rather than by any known code bug at this point.
+- **The whole chain is verified end-to-end, but the interviews are too
+  short to be useful.** Sign in → upload a real CV → analyze →
+  roadmap/stages/progress in Postgres → start a stage → talk → turns
+  captured → scored → scorecard, all with real data, real auth, and real
+  Gemini calls (this is also how a real RLS gap surfaced: `stages` and
+  `scorecards` only ever had a SELECT policy in the spec's own §3 SQL,
+  never INSERT). The two completed sessions captured **two turns each**
+  and scored 5/100 — the Live API quota above stops the interviewer from
+  asking anything further, so those numbers say nothing about the scoring
+  model's quality. That needs a paid key, not a code change.
+- **XP is not retroactive.** XP accumulation onto `profiles` and the
+  trigger that creates those rows both landed in Phase 4, after the first
+  scored sessions existed. Their XP was awarded on the scorecard but never
+  added to a profile, so the XP bar starts at 0 for a user with history.
+  Backfilling it from existing `scorecards` would be a few lines; it isn't
+  worth doing for two throwaway test sessions.
 - **A failed `/api/analyze` attempt leaves an orphaned `roadmaps` row.**
   Documents and the roadmap insert happen before stages; if anything after
   that fails, there's no cleanup. Harmless (nothing reads a roadmap with 0
@@ -222,10 +259,12 @@ npm run dev
   stays the original Phase 0 connectivity check — no CV data, no
   stage-specific prompt, low enough risk to leave reachable by anyone who
   knows the endpoint.
-- **No UI actually links to `/session/[id]?stageId=...` yet.** That trigger
-  is Phase 4's "Start" button on the skill tree, which doesn't exist until
-  Phase 4. The mechanism (session creation, gating, turn capture, scoring)
-  is built and independently testable by constructing the URL by hand.
+- **specs §8.3's "considered, deferred" list is still deferred.** Streak
+  freezes, leaderboards, achievement badges, daily goals, and push
+  notifications are all named in the spec as explicitly out of scope, and
+  none of them are built. The one place this leaks into behaviour: a missed
+  day resets the streak to 1 with no grace period, because a streak freeze
+  is exactly the deferred feature that would prevent it.
 - **TTFA's local fallback is a heuristic, not ground truth.** It infers
   end-of-speech from mic energy dropping for ~800ms, mirroring the server's
   own `silenceDurationMs` — useful for a sanity check, not a rigorous
@@ -245,7 +284,7 @@ npm run dev
 - [x] Phase 1 — public demo + guardrails
 - [x] Phase 2 — CV/JD intake and gap analysis (verified end-to-end with a
       real user, real CV, real Gemini calls)
-- [x] Phase 3 — transcripts and scorecards (built; the interview-session
-      half not yet run end-to-end — see Known gaps and risks)
-- [ ] Phase 4 — gamified roadmap
+- [x] Phase 3 — transcripts and scorecards (run end-to-end against the live
+      API; sessions cut short by the Live API quota — see Known gaps and risks)
+- [x] Phase 4 — gamified roadmap (skill tree, XP, streaks, stage sheet, Start)
 - [ ] Phase 5 — ship
