@@ -24,16 +24,23 @@ something introduced later, and one that also silently affected
 `scorecards` before anyone ever got that far.
 
 **Phase 3** (turn capture, deterministic metrics, Gemini scoring, scorecard
-UI) is built and **has now run start-to-finish against the live API**: two
-real sessions connected, captured turns, scored, and wrote `scorecards` rows
-with XP and stars. Both were *short* — the Live API's free-tier quota starves
-the interviewer after a couple of turns — so the pipeline is proven while the
-scores themselves aren't meaningful yet (see Known gaps).
+UI) is built and **verified against the live API with a full-length
+interview**: 6m43s, 30 captured turns, scored 28/100 with grounded strengths,
+improvements and model answers. Two earlier sessions were cut to two turns
+each by the Live API quota; the long one shows the pipeline works when the
+quota holds.
 
 **Phase 4** (gamified roadmap) is built: the serpentine skill tree with
 locked/available/attempted nodes, an XP bar and streak counter, a stage
 detail sheet, and the Start button that launches a real interview. XP and
 streak now actually accumulate on `profiles` when a session is scored.
+
+**Navigation** was then built on top of all of it. Not a numbered phase — the
+spec never described one, which is exactly how the app ended up with seven
+authenticated pages and no way to move between them. Every route was a leaf
+reachable only by typing its URL: no shell, no back links, no list of past
+interviews, no list of uploaded documents, and signing back in dropped you
+into the wizard that builds a *new* roadmap rather than anywhere you'd been.
 
 Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
 
@@ -62,6 +69,10 @@ Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
   opens a sheet with the stage's focus areas, best score, attempts, and
   Start. Every bit of that state is read from Postgres per request, so it
   survives a hard refresh by construction.
+- **An app you can actually navigate.** A persistent shell with Home /
+  Interviews / Documents, an explicit back link on every leaf page, a hub
+  listing your roadmaps and recent interviews, a full interview history with
+  scores, and a document list with signed links to the CVs you uploaded.
 - **A full Postgres schema** (Supabase), RLS enabled on every table from the
   first migration, not retrofitted.
 
@@ -127,6 +138,15 @@ Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
   every request and hands the client plain data. Unlocking is decided by
   `/api/sessions/[id]/score` writing `progress`, never by the UI. The one
   piece of client state is which node's sheet is open.
+- **Navigation.** `/home` is the hub and the post-sign-in landing page; it
+  redirects to `/onboarding` only when you have no roadmaps at all, so the
+  wizard is the first-run screen rather than the front door. Back links name
+  their destination (`← Agent Builder at Hymaïa`) instead of calling
+  `router.back()`, because a scorecard is reached both from the history list
+  and from a redirect out of the interview room, where going "back" would
+  land on a dead session. The interview room only offers an exit while idle:
+  mid-session, Stop is the correct way out because it flushes turns and
+  scores, and a client-side `<Link>` would skip that entirely.
 - **Profile rows are created by a database trigger**, not by application
   code. `profiles` is where XP and streaks live, but nothing ever inserted
   into it — the spec's §3 schema defines the table and never creates a row
@@ -150,6 +170,8 @@ Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
 | XP per level | 500 | The spec has an XP formula but no level system; the bar needs *some* target, and this one is arbitrary and clearly marked as such in the code |
 | Skill-tree layout | Fixed coordinates, not measured DOM | Four nodes at known spacing make the serpentine path deterministic — no refs, layout effects, or resize observer |
 | Progress path fill | Plain `<path>` + CSS transition, not `motion.path` | Motion owns `strokeDasharray`/`strokeDashoffset` internally; animating them through it produced a path stuck at 3% of its target (verified in-browser) |
+| Back navigation | Explicit `href` per page, never `router.back()` | The scorecard is reachable from two directions, one of which is a redirect off a closed session |
+| List page joins | Separate queries merged in JS, not PostgREST embedding | `scorecards.session_id` is unique, so an embed's result shape depends on relationship detection; these tables are tiny |
 
 ## Setup
 
@@ -197,8 +219,14 @@ npm run dev
   the scorecard.
 - `/demo` — the real public flow: language toggle, Turnstile, mic
   permission, a 2-minute countdown.
-- `/sign-in` → `/onboarding` — sign in with a magic link, then upload a CV
-  and paste a job description to generate a roadmap.
+- `/sign-in` → `/home` — sign in with a magic link. First-time users are
+  forwarded to `/onboarding` to upload a CV and paste a job description.
+- `/home` — the hub: XP and streak, your roadmaps with per-stage progress,
+  and your five most recent interviews.
+- `/interviews` — every session you've run, scored or not, with duration,
+  turn count and score. Scored rows open their scorecard.
+- `/documents` — the CVs and job descriptions behind each roadmap. CVs get a
+  one-hour signed URL; the `cvs` bucket is private.
 - `/roadmap/[roadmapId]` — the skill tree: XP bar, streak, four stage nodes,
   and the Start button that creates a session and drops you into the
   interview room.
@@ -227,27 +255,30 @@ npm run dev
   audio shows up — the interviewer prompt itself was never the problem
   (verified: it works fine with quota available), but the app previously
   gave zero feedback when it wasn't.
-- **The whole chain is verified end-to-end, but the interviews are too
-  short to be useful.** Sign in → upload a real CV → analyze →
-  roadmap/stages/progress in Postgres → start a stage → talk → turns
-  captured → scored → scorecard, all with real data, real auth, and real
-  Gemini calls (this is also how a real RLS gap surfaced: `stages` and
+- **The whole chain is verified end-to-end.** Sign in → upload a real CV →
+  analyze → roadmap/stages/progress in Postgres → start a stage → talk →
+  turns captured → scored → scorecard, all with real data, real auth, and
+  real Gemini calls (this is also how a real RLS gap surfaced: `stages` and
   `scorecards` only ever had a SELECT policy in the spec's own §3 SQL,
-  never INSERT). The two completed sessions captured **two turns each**
-  and scored 5/100 — the Live API quota above stops the interviewer from
-  asking anything further, so those numbers say nothing about the scoring
-  model's quality. That needs a paid key, not a code change.
+  never INSERT). The longest run so far is 6m43s and 30 turns. Two earlier
+  sessions ended after two turns each and scored 5/100 — that's the Live
+  API quota above, not the scoring model, and it's the failure mode to
+  expect on a free key.
 - **XP is not retroactive.** XP accumulation onto `profiles` and the
   trigger that creates those rows both landed in Phase 4, after the first
-  scored sessions existed. Their XP was awarded on the scorecard but never
-  added to a profile, so the XP bar starts at 0 for a user with history.
-  Backfilling it from existing `scorecards` would be a few lines; it isn't
-  worth doing for two throwaway test sessions.
+  scored sessions existed. Those sessions' XP (8 and 9) was written to their
+  scorecards and never added to a profile, so the bar currently reads 49 —
+  the one session scored since — rather than 66. Backfilling from existing
+  `scorecards` would be a few lines; it isn't worth doing for two throwaway
+  test sessions.
 - **A failed `/api/analyze` attempt leaves an orphaned `roadmaps` row.**
   Documents and the roadmap insert happen before stages; if anything after
-  that fails, there's no cleanup. Harmless (nothing reads a roadmap with 0
-  stages), just clutter — worth a transaction or explicit cleanup later,
-  not urgent now.
+  that fails, there's no cleanup. This stopped being invisible once the app
+  grew list pages — a real account has one such roadmap and several unlinked
+  documents — so `/home`, `/roadmap/[id]` and `/documents` all detect the
+  zero-stage case and say "analysis didn't finish" instead of rendering a
+  dead card or an empty skill tree. Labelling it is not fixing it: the rows
+  still want a transaction or a cleanup pass.
 - **The Gemini structured-output complexity budget is undocumented.** The
   two-call split works for `GapAnalysis`; `Scorecard` stays one call
   because it's shallow enough not to hit the same budget. If either schema
@@ -270,10 +301,17 @@ npm run dev
   own `silenceDurationMs` — useful for a sanity check, not a rigorous
   benchmark, until the project is allowlisted for the real
   `voiceActivityDetectionSignal`.
-- **`/sample-scorecard` uses a fixture, not a real scorecard.** The spec
-  calls for "a real scorecard of mine" — swap
-  `lib/fixtures/sample-scorecard.ts` for a real one once a real interview
-  has actually been scored.
+- **`/sample-scorecard` still uses a fixture.** The spec calls for "a real
+  scorecard of mine", and as of the 6m43s session there finally is one worth
+  showing — `lib/fixtures/sample-scorecard.ts` just hasn't been swapped for
+  it yet. Doing so means deciding how much of a real transcript to publish.
+- **Nothing can be deleted or renamed from the UI.** The document and roadmap
+  lists are read-only: no delete, no rename, no re-analyze against an updated
+  CV. Failed analyses leave orphaned rows (below), and the lists now label
+  them rather than hiding them, but clearing them out still means SQL.
+- **The interview history has no filtering or pagination.** Every session is
+  rendered in one list, newest first. Fine at five sessions; not at five
+  hundred.
 - **The demo reel and GitHub link on the landing page are placeholders.**
   The reel is recorded now that Phase 3's scorecards exist to show off, but
   hasn't been; the repo link needs to be filled in by hand.
@@ -287,4 +325,6 @@ npm run dev
 - [x] Phase 3 — transcripts and scorecards (run end-to-end against the live
       API; sessions cut short by the Live API quota — see Known gaps and risks)
 - [x] Phase 4 — gamified roadmap (skill tree, XP, streaks, stage sheet, Start)
+- [x] Navigation — app shell, hub, interview history, document list, back links
+      (unspecced; the app was seven leaf pages with no way between them)
 - [ ] Phase 5 — ship
