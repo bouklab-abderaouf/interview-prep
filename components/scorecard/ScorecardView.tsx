@@ -74,7 +74,12 @@ export function ScorecardView({
         <div className="flex flex-col gap-1">
           <div className="flex gap-1 text-xl" aria-label={`${stars} of 3 stars`}>
             {[0, 1, 2].map((i) => (
-              <span key={i} className={i < stars ? "text-amber-500" : "text-zinc-300"}>
+              // zinc-300 alone is near-white on the dark theme, so an unearned
+              // star read as an earned one — a 28/100 scorecard showed ★★★.
+              <span
+                key={i}
+                className={i < stars ? "text-amber-500" : "text-zinc-300 dark:text-zinc-700"}
+              >
                 ★
               </span>
             ))}
