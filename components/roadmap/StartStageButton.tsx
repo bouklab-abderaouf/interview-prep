@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 
 interface StartStageButtonProps {
   stageId: string;
+  /** Defaults to "Start"; the scorecard reuses this as a retry action. */
+  label?: string;
 }
 
 // specs §8.1 — the skill tree's "Start" action. POST /api/sessions, then
 // navigate to the interview room. Kept as its own client component so the
 // sheet around it stays presentational.
-export function StartStageButton({ stageId }: StartStageButtonProps) {
+export function StartStageButton({ stageId, label = "Start" }: StartStageButtonProps) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "starting" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -43,7 +45,7 @@ export function StartStageButton({ stageId }: StartStageButtonProps) {
         disabled={status === "starting"}
         className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
       >
-        {status === "starting" ? "Starting..." : "Start"}
+        {status === "starting" ? "Starting..." : label}
       </button>
       {errorMessage && <p className="text-xs text-red-600">{errorMessage}</p>}
     </div>

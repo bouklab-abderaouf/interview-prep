@@ -6,7 +6,7 @@ import { sampleScorecard } from "@/lib/fixtures/sample-scorecard";
 // fixture for now.
 export default function SampleScorecardPage() {
   return (
-    <main className="flex flex-1 flex-col">
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col p-8">
       <ScorecardView
         overall={sampleScorecard.overall}
         stars={sampleScorecard.stars}

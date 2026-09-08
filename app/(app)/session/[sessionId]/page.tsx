@@ -9,6 +9,7 @@ import { createAudioPlayer, type AudioPlayerHandle } from "@/lib/audio/player";
 import { connectLiveSession, sendAudioChunk } from "@/lib/live/client";
 import type { TokenResponseBody } from "@/lib/live/types";
 import type { Turn } from "@/lib/metrics/deterministic";
+import { BackLink } from "@/components/nav/BackLink";
 
 // Phase 0 §4 walking-skeleton harness, extended in Phase 3 (§7.1) into the
 // real interview room when a stageId is present: mode: 'full', turn capture,
@@ -364,13 +365,28 @@ export default function SessionPage({
 
   return (
     <main className="flex flex-1 flex-col gap-6 p-8">
-      <div className="fixed top-4 right-4 rounded border border-zinc-300 bg-white/90 p-3 text-sm text-zinc-900 shadow">
+      {/* Below the app header, not under it — the shell's bar is sticky. */}
+      <div className="fixed top-20 right-4 z-20 rounded border border-zinc-300 bg-white/90 p-3 text-sm text-zinc-900 shadow">
         <div>TTFA: {lastTtfa !== null ? `${Math.round(lastTtfa)} ms` : "—"}</div>
         <div>median: {median !== null ? `${Math.round(median)} ms` : "—"}</div>
         <div>p90: {p90 !== null ? `${Math.round(p90)} ms` : "—"}</div>
       </div>
 
-      <h1 className="text-lg font-medium">Session {sessionId} — voice loop</h1>
+      {/* Only offer a way out when there's nothing live to lose: mid-session,
+          Stop is the correct exit because it flushes turns and scores. A
+          client-side <Link> would skip the beforeunload flush entirely. */}
+      {(status === "idle" || status === "error") && (
+        <BackLink href={isRealSession ? "/interviews" : "/home"}>
+          {isRealSession ? "Interviews" : "Home"}
+        </BackLink>
+      )}
+
+      <div className="flex flex-col gap-1">
+        <h1 className="text-lg font-medium">
+          {isRealSession ? "Interview room" : "Voice loop test"}
+        </h1>
+        <p className="text-xs text-zinc-500">Session {sessionId}</p>
+      </div>
 
       <div className="flex gap-3">
         <button

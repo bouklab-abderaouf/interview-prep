@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { BackLink } from "@/components/nav/BackLink";
 import { SkillTree } from "@/components/roadmap/SkillTree";
 import { XpBar } from "@/components/roadmap/XpBar";
 import type { RoadmapStage, StageProgress } from "@/components/roadmap/types";
@@ -56,6 +58,8 @@ export default async function RoadmapPage({
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-8">
+      <BackLink href="/home">All roadmaps</BackLink>
+
       <header className="flex flex-col gap-4">
         <div>
           <h1 className="text-xl font-medium">
@@ -67,7 +71,24 @@ export default async function RoadmapPage({
         <XpBar totalXp={profile?.total_xp ?? 0} streakDays={profile?.streak_days ?? 0} />
       </header>
 
-      <SkillTree stages={stages ?? []} progressByStageId={progressByStageId} />
+      {stages && stages.length > 0 ? (
+        <SkillTree stages={stages} progressByStageId={progressByStageId} />
+      ) : (
+        /* The orphan a failed /api/analyze leaves behind: a roadmap row with
+           no stages. An empty skill tree is just a blank box, so explain it. */
+        <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
+          <p className="font-medium">No stages were built for this roadmap.</p>
+          <p className="mt-1 text-sm text-zinc-500">
+            The gap analysis didn&rsquo;t finish. Start over with your CV and the job description.
+          </p>
+          <Link
+            href="/onboarding"
+            className="mt-4 inline-block rounded bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+          >
+            Build a new roadmap
+          </Link>
+        </div>
+      )}
     </main>
   );
 }

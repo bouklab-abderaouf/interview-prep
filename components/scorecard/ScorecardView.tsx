@@ -68,7 +68,7 @@ export function ScorecardView({
   turns,
 }: ScorecardViewProps) {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-10 p-8">
+    <div className="flex flex-col gap-10">
       <section className="flex items-center gap-6">
         <ScoreRing score={overall} />
         <div className="flex flex-col gap-1">

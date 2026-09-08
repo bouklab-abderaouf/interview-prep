@@ -25,7 +25,10 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get("type") as EmailOtpType | null;
 
   const redirectTo = request.nextUrl.clone();
-  redirectTo.pathname = "/onboarding";
+  // Land on the hub, not /onboarding — that page builds a *new* roadmap
+  // every time, which is wrong for anyone signing back in. /home sends
+  // genuinely-new users on to onboarding itself.
+  redirectTo.pathname = "/home";
   redirectTo.search = "";
 
   const supabase = await createClient();

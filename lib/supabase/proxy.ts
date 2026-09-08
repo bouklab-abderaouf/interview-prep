@@ -7,7 +7,15 @@ import { NextResponse, type NextRequest } from "next/server";
 // to /sign-in; API routes still verify auth themselves rather than relying
 // on this alone, per Next's own guidance that a matcher change could
 // silently drop coverage.
-const PROTECTED_PREFIXES = ["/onboarding", "/roadmap", "/session", "/scorecard"];
+const PROTECTED_PREFIXES = [
+  "/home",
+  "/interviews",
+  "/documents",
+  "/onboarding",
+  "/roadmap",
+  "/session",
+  "/scorecard",
+];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -47,8 +55,8 @@ export async function updateSession(request: NextRequest) {
 
   if (isProtected && !data?.claims) {
     // Not threading a "return to X" param through: the magic-link email
-    // template would need dashboard config to forward it, and the only
-    // protected destination in the current UI is /onboarding anyway.
+    // template would need dashboard config to forward it. Signing in lands
+    // on /home, which is one click from anywhere else in the app.
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
     return NextResponse.redirect(url);
