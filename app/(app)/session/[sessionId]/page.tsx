@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { Session } from "@google/genai";
 
 import { startRecording, type AudioRecorderHandle } from "@/lib/audio/recorder";
+import { describeMicError, requestMicrophone } from "@/lib/audio/mic";
 import { createAudioPlayer, type AudioPlayerHandle } from "@/lib/audio/player";
 import { connectLiveSession, sendAudioChunk } from "@/lib/live/client";
 import type { TokenResponseBody } from "@/lib/live/types";
@@ -56,6 +57,10 @@ export default function SessionPage({
 
   const sessionRef = useRef<Session | null>(null);
   const recorderRef = useRef<AudioRecorderHandle | null>(null);
+  // Held separately from the recorder: the mic is acquired before the recorder
+  // exists, so a failure in between (token, connect) would otherwise leave the
+  // browser's recording indicator on with nothing owning the tracks.
+  const micStreamRef = useRef<MediaStream | null>(null);
   const playerRef = useRef<AudioPlayerHandle | null>(null);
   const activityEndAtRef = useRef<number | null>(null);
   const awaitingFirstAudioRef = useRef(false);
@@ -208,6 +213,10 @@ export default function SessionPage({
     flushAccumulatedTurn("interviewer", interviewerAccRef);
     recorderRef.current?.stop();
     recorderRef.current = null;
+    // stop() on the recorder already stops these tracks; this covers the case
+    // where the mic was granted but the recorder never got built.
+    micStreamRef.current?.getTracks().forEach((track) => track.stop());
+    micStreamRef.current = null;
     playerRef.current?.close();
     playerRef.current = null;
     sessionRef.current?.close();
@@ -241,6 +250,21 @@ export default function SessionPage({
     turnsRef.current = [];
     candidateAccRef.current = { text: "", startMs: null };
     interviewerAccRef.current = { text: "", startMs: null };
+
+    // The microphone comes first, before a token is minted or the Live socket
+    // is opened. Asking last meant a blocked mic still spent a Live API
+    // session — the scarcest thing in this app on the free tier — and then
+    // threw a bare NotAllowedError into the console.
+    let micStream: MediaStream;
+    try {
+      micStream = await requestMicrophone();
+    } catch (error) {
+      console.error("[session start] microphone", error);
+      setErrorMessage(describeMicError(error));
+      setStatus("error");
+      return;
+    }
+    micStreamRef.current = micStream;
 
     try {
       const tokenRes = await fetch("/api/live/token", {
@@ -331,7 +355,7 @@ export default function SessionPage({
 
       sessionRef.current = session;
 
-      recorderRef.current = await startRecording({
+      recorderRef.current = await startRecording(micStream, {
         onChunk: (chunk) => sendAudioChunk(session, chunk),
         onLocalActivityStart: cancelPendingActivityEnd,
         onLocalActivityEnd: () => {

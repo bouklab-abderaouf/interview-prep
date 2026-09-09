@@ -114,6 +114,9 @@ export default function DemoPage() {
 
   const sessionRef = useRef<Session | null>(null);
   const recorderRef = useRef<AudioRecorderHandle | null>(null);
+  // The gate grants the mic before the token is minted, so the tracks need an
+  // owner during the window where the recorder doesn't exist yet.
+  const micStreamRef = useRef<MediaStream | null>(null);
   const playerRef = useRef<AudioPlayerHandle | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -122,6 +125,8 @@ export default function DemoPage() {
     countdownRef.current = null;
     recorderRef.current?.stop();
     recorderRef.current = null;
+    micStreamRef.current?.getTracks().forEach((track) => track.stop());
+    micStreamRef.current = null;
     playerRef.current?.close();
     playerRef.current = null;
     sessionRef.current?.close();
@@ -129,9 +134,10 @@ export default function DemoPage() {
     setStage((prev) => (prev === "error" ? prev : "ended"));
   }, []);
 
-  const beginLiveSession = useCallback(async () => {
+  const beginLiveSession = useCallback(async (micStream: MediaStream) => {
     if (!turnstileToken) return;
     setErrorMessage(null);
+    micStreamRef.current = micStream;
 
     try {
       const tokenRes = await fetch("/api/live/token", {
@@ -162,9 +168,9 @@ export default function DemoPage() {
       });
       sessionRef.current = session;
 
-      recorderRef.current = await startRecording({
-        onChunk: (chunk) => sendAudioChunk(session, chunk),
-        onError: (error) => console.error("[demo] recorder error", error),
+      recorderRef.current = await startRecording(micStream, {
+        onChunk: (chunk: string) => sendAudioChunk(session, chunk),
+        onError: (error: unknown) => console.error("[demo] recorder error", error),
       });
 
       setSecondsLeft(DEMO_SESSION_MAX_SECONDS);

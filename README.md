@@ -112,6 +112,13 @@ Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
   confirmed by bisecting against the live API. That one field is generated
   in a second, cheap, text-only call and merged in — see the comment in
   `lib/gemini/analyze-gap.ts` for the full story.
+- **Microphone before spend.** `getUserMedia` runs before the ephemeral token
+  is minted or the Live socket is opened, and the granted `MediaStream` is
+  handed to the recorder rather than requested a second time. It used to be
+  the last step, so a blocked mic paid for a Live API session — the scarcest
+  resource in this app on the free tier — and then failed with a bare
+  `NotAllowedError` in the console and nothing in the UI. Verified by stubbing
+  `getUserMedia` to reject: no `/api/live/token` request is made at all.
 - **Interview arc.** The interviewer prompt carries an explicit running
   order — greet, introduce yourself, invite the candidate to walk through
   their own background, follow up on what they actually said, and only then

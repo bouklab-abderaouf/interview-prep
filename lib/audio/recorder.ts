@@ -37,20 +37,16 @@ export interface AudioRecorderHandle {
   stop: () => void;
 }
 
+/**
+ * Takes an already-granted stream rather than calling getUserMedia itself.
+ * Callers acquire the mic first (lib/audio/mic.ts) so a denied permission
+ * fails before a Live API session has been paid for, and so the permission
+ * prompt isn't raised twice.
+ */
 export async function startRecording(
+  stream: MediaStream,
   callbacks: AudioRecorderCallbacks,
 ): Promise<AudioRecorderHandle> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      // Echo cancellation is mandatory — without it, laptop speakers feed the
-      // AI's own voice back into the mic and it interrupts itself endlessly.
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      channelCount: 1,
-    },
-  });
-
   // Native rate (usually 48000). Do not force 16000 on the input context —
   // browsers handle it inconsistently.
   const context = new AudioContext();

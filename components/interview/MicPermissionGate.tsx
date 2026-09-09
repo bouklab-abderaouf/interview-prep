@@ -2,8 +2,13 @@
 
 import { useState } from "react";
 
+import { describeMicError, requestMicrophone } from "@/lib/audio/mic";
+
 interface MicPermissionGateProps {
-  onGranted: () => void;
+  /** Receives the granted stream. The gate deliberately does not stop the
+   * tracks: handing the live stream on means the caller never has to call
+   * getUserMedia a second time, after it has already paid for a session. */
+  onGranted: (stream: MediaStream) => void;
 }
 
 // Phase 1 §5.2 — explains the mic request and offers a fallback for people
@@ -13,14 +18,15 @@ interface MicPermissionGateProps {
 export function MicPermissionGate({ onGranted }: MicPermissionGateProps) {
   const [status, setStatus] = useState<"idle" | "requesting" | "denied">("idle");
   const [showFallback, setShowFallback] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const requestMic = async () => {
     setStatus("requesting");
+    setErrorMessage(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((track) => track.stop());
-      onGranted();
-    } catch {
+      onGranted(await requestMicrophone());
+    } catch (error) {
+      setErrorMessage(describeMicError(error));
       setStatus("denied");
     }
   };
@@ -51,11 +57,8 @@ export function MicPermissionGate({ onGranted }: MicPermissionGateProps) {
       >
         {status === "requesting" ? "Requesting..." : "Allow microphone"}
       </button>
-      {status === "denied" && (
-        <p className="text-sm text-red-600">
-          Microphone access was denied. Allow it from your browser&apos;s
-          address-bar controls and try again, or continue without one.
-        </p>
+      {status === "denied" && errorMessage && (
+        <p className="text-sm text-red-600">{errorMessage}</p>
       )}
       <button type="button" onClick={() => setShowFallback(true)} className="text-sm underline self-start">
         Listen to a sample instead
