@@ -26,6 +26,37 @@ const OPENING: Record<InterviewLanguage, string> = {
   en: "You are a technical recruiter conducting a live spoken job interview.",
 };
 
+// Real interviews open broad and narrow down. Without this, the model treats
+// the question bank as a list to start working through, and the first thing a
+// candidate hears is the sharpest question in it — a live session opened with
+// "explain the overlap between your CDI and your freelance work", which is an
+// interrogation, not an interview. The bank stays as generated; what changes
+// is when its contents are allowed to arrive.
+const CONVERSATION_ARC: Record<InterviewLanguage, string> = {
+  fr: [
+    "Déroule l'entretien comme une vraie conversation, pas comme un questionnaire :",
+    "1) Commence par saluer le candidat, présente-toi (nom et fonction), dis en une phrase comment va se dérouler l'échange, puis invite-le à se présenter et à retracer son parcours avec ses propres mots. Ne pose aucune question de ta banque à ce premier tour.",
+    "2) Enchaîne sur ce qu'il vient réellement de dire : son parcours, pourquoi il a fait tel choix, ce dont il était responsable. Rebondis au lieu de passer à la suite.",
+    "3) Seulement ensuite, entre dans les questions de fond, en t'appuyant sur ce que tu as déjà appris de lui.",
+    "4) Garde les questions inconfortables — un trou dans le parcours, des dates qui ne collent pas, une expérience qui manque pour le poste — pour la seconde moitié, une fois la confiance installée. Ne commence jamais par l'une d'elles.",
+  ].join(" "),
+  en: [
+    "Run this like a real conversation, not a questionnaire:",
+    "1) Open by greeting the candidate, introducing yourself by name and role, saying in one sentence how the conversation will go, then inviting them to introduce themselves and walk through their background in their own words. Do not ask anything from your question bank on that first turn.",
+    "2) Follow up on what they actually said: their timeline, why they made the moves they made, what they personally owned. React to the answer instead of moving on.",
+    "3) Only then work into the substantive questions, building on what you've already learned about them.",
+    "4) Save the uncomfortable questions — an employment gap, dates that don't line up, experience the role wants and the CV doesn't show — for the second half, once there's some rapport. Never open with one.",
+  ].join(" "),
+};
+
+// The same session produced "D'accord, je vois." in response to a candidate
+// who had only said "Bonjour, bonjour" — it treated a non-answer as an answer
+// and moved on, which is both unrealistic and useless for practice.
+const NON_ANSWER_HANDLING: Record<InterviewLanguage, string> = {
+  fr: "Si une réponse est vide, inaudible, ou ne répond pas vraiment à la question, dis-le simplement et repose la question — ne fais pas semblant d'avoir obtenu une réponse.",
+  en: "If an answer is empty, inaudible, or doesn't actually address what you asked, say so plainly and ask again — never pretend you got an answer you didn't get.",
+};
+
 const TONE_DIRECTION: Record<StageContext["persona"]["tone"], Record<InterviewLanguage, string>> = {
   warm: { fr: "chaleureux et encourageant", en: "warm and encouraging" },
   neutral: { fr: "neutre et professionnel", en: "neutral and professional" },
@@ -51,21 +82,23 @@ export function buildInterviewerPrompt({
     language === "fr"
       ? "Réponds toujours en français."
       : "Always respond in English.",
+    CONVERSATION_ARC[language],
+    NON_ANSWER_HANDLING[language],
   ];
 
   if (mode === "demo") {
     lines.push(
       language === "fr"
-        ? "Ceci est une démo de deux minutes : reste sur des questions générales d'entretien."
-        : "This is a two-minute demo: stick to general interview questions.",
+        ? "Ceci est une démo de deux minutes : après une présentation brève, reste sur des questions générales d'entretien."
+        : "This is a two-minute demo: after a brief introduction, stick to general interview questions.",
     );
   }
 
   if (scenario) {
     lines.push(
       language === "fr"
-        ? `Voici le CV du candidat : ${scenario.cvSummary} Voici l'offre visée : ${scenario.jdSummary} Pose au moins une question directe qui sonde un vrai décalage entre le CV et l'offre, sans être diplomate à ce sujet.`
-        : `Here is the candidate's CV: ${scenario.cvSummary} Here is the job description: ${scenario.jdSummary} Ask at least one direct question probing a real gap between the CV and the JD — don't be diplomatic about it.`,
+        ? `Voici le CV du candidat : ${scenario.cvSummary} Voici l'offre visée : ${scenario.jdSummary} Une fois que le candidat s'est présenté, pose au moins une question directe qui sonde un vrai décalage entre le CV et l'offre, sans être diplomate à ce sujet.`
+        : `Here is the candidate's CV: ${scenario.cvSummary} Here is the job description: ${scenario.jdSummary} Once the candidate has introduced themselves, ask at least one direct question probing a real gap between the CV and the JD — don't be diplomatic about it.`,
     );
   }
 
@@ -82,10 +115,14 @@ export function buildInterviewerPrompt({
     const questionLines = questionBank
       .map((q, i) => `${i + 1}. ${q.text}${q.follow_ups.length ? ` (follow-ups: ${q.follow_ups.join(" / ")})` : ""}`)
       .join("\n");
+    // Deliberately not "in whatever order feels natural", which is what this
+    // said before: banks come back ordered by how pointed the question is, so
+    // "natural" order meant hardest first. The arc above decides the order;
+    // this list is only the material.
     lines.push(
       language === "fr"
-        ? `Voici ta banque de questions pour cette étape — pose-les dans l'ordre qui te semble naturel, utilise les relances si la réponse est courte ou évasive, et rebondis sur ce que dit le candidat plutôt que de les lire mot pour mot :\n${questionLines}`
-        : `Here is your question bank for this stage — ask them in whatever order feels natural, use the follow-ups if an answer is short or evasive, and react to what the candidate actually says rather than reading these verbatim:\n${questionLines}`,
+        ? `Voici ta banque de questions pour cette étape. Elle n'est pas dans l'ordre : classe-la toi-même, de la plus large à la plus pointue, et suis le déroulé décrit plus haut. Utilise les relances si la réponse est courte ou évasive, et rebondis sur ce que dit le candidat plutôt que de les lire mot pour mot. Tu n'es pas obligé de toutes les poser :\n${questionLines}`
+        : `Here is your question bank for this stage. It is not in running order: sort it yourself from broadest to sharpest and follow the arc described above. Use the follow-ups if an answer is short or evasive, and react to what the candidate actually says rather than reading these verbatim. You do not have to get through all of them:\n${questionLines}`,
     );
   }
 

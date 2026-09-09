@@ -112,6 +112,16 @@ Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
   confirmed by bisecting against the live API. That one field is generated
   in a second, cheap, text-only call and merged in — see the comment in
   `lib/gemini/analyze-gap.ts` for the full story.
+- **Interview arc.** The interviewer prompt carries an explicit running
+  order — greet, introduce yourself, invite the candidate to walk through
+  their own background, follow up on what they actually said, and only then
+  work into the stage's questions, with the uncomfortable ones held for the
+  second half. Without it the model treats the question bank as a to-do list
+  and opens with the sharpest item in it: a real recruiter screen began with
+  "explain the overlap between your CDI and your freelance work", which is an
+  interrogation rather than an interview. The same block tells it to call out
+  a non-answer and re-ask instead of accepting it — that same session replied
+  "D'accord, je vois" to a candidate who had only said "Bonjour".
 - **Turn capture.** `inputAudioTranscription`/`outputAudioTranscription`
   arrive as incremental deltas, not full turn text — concatenated per-role
   and timestamped relative to session start. A turn closes out on
@@ -172,6 +182,8 @@ Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
 | Progress path fill | Plain `<path>` + CSS transition, not `motion.path` | Motion owns `strokeDasharray`/`strokeDashoffset` internally; animating them through it produced a path stuck at 3% of its target (verified in-browser) |
 | Back navigation | Explicit `href` per page, never `router.back()` | The scorecard is reachable from two directions, one of which is a redirect off a closed session |
 | List page joins | Separate queries merged in JS, not PostgREST embedding | `scorecards.session_id` is unique, so an embed's result shape depends on relationship detection; these tables are tiny |
+| Interview arc | Enforced in the interviewer prompt, and the bank is ordered at generation time | The prompt fix reaches roadmaps that already exist; the generation fix only reaches new ones |
+| Question-bank arc | Encoded as array order, not a `phase` field per question | `GapAnalysis` already sits at Gemini's undocumented structured-output complexity budget; another field risks re-triggering the 400 |
 
 ## Setup
 
@@ -309,6 +321,15 @@ npm run dev
   lists are read-only: no delete, no rename, no re-analyze against an updated
   CV. Failed analyses leave orphaned rows (below), and the lists now label
   them rather than hiding them, but clearing them out still means SQL.
+- **Roadmaps built before the arc fix still have gap-first question banks.**
+  The generation prompt now requires the first question to be a broad opener
+  and the pointed ones to come last, but that only affects roadmaps analysed
+  from now on. Existing banks — including one whose first two entries
+  challenge a date overlap and a seniority gap — are unchanged in Postgres.
+  The interviewer prompt tells the model to re-sort the bank and open on its
+  own, which covers the symptom (verified: it now opens with a proper
+  introduction against that exact bank), but the stored data is still wrong
+  and a re-analysis is the real fix.
 - **The interview history has no filtering or pagination.** Every session is
   rendered in one list, newest first. Fine at five sessions; not at five
   hundred.
