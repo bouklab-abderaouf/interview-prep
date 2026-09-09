@@ -119,6 +119,15 @@ Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
   resource in this app on the free tier — and then failed with a bare
   `NotAllowedError` in the console and nothing in the UI. Verified by stubbing
   `getUserMedia` to reject: no `/api/live/token` request is made at all.
+- **Scoring is recoverable.** Turns are flushed to Postgres before the
+  scoring call runs, so a failed score never costs the interview — but until
+  recently nothing could ask for one again, and a transient Gemini 503 left an
+  11-minute session permanently unscored with only a console message. Scoring
+  is now idempotent (a second POST returns the existing scorecard rather than
+  tripping `scorecards.session_id`'s unique constraint), and any session with
+  captured turns and no scorecard offers to run it — from the interview room
+  where it failed, and from `/interviews` afterwards. Abandoned sessions
+  qualify too: closing the tab still flushes the turns.
 - **Interview arc.** The interviewer prompt carries an explicit running
   order — greet, introduce yourself, invite the candidate to walk through
   their own background, follow up on what they actually said, and only then
@@ -190,6 +199,7 @@ Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
 | Back navigation | Explicit `href` per page, never `router.back()` | The scorecard is reachable from two directions, one of which is a redirect off a closed session |
 | List page joins | Separate queries merged in JS, not PostgREST embedding | `scorecards.session_id` is unique, so an embed's result shape depends on relationship detection; these tables are tiny |
 | Interview arc | Enforced in the interviewer prompt, and the bank is ordered at generation time | The prompt fix reaches roadmaps that already exist; the generation fix only reaches new ones |
+| Scoring retries | 4 attempts server-side, plus a manual retry in the UI | Each automatic retry spends one of 20 daily free-tier requests; a deliberate retry is cheaper than a speculative one |
 | Question-bank arc | Encoded as array order, not a `phase` field per question | `GapAnalysis` already sits at Gemini's undocumented structured-output complexity budget; another field risks re-triggering the 400 |
 
 ## Setup

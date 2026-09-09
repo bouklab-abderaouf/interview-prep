@@ -57,6 +57,20 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
     return NextResponse.json({ error: "roadmap_not_found" }, { status: 404 });
   }
 
+  // Scoring is retryable from the UI now (a transient Gemini 503 once cost an
+  // 11-minute interview its scorecard), so a second POST for an already-scored
+  // session is an ordinary thing to receive rather than a bug. Return the
+  // existing scorecard instead of tripping scorecards.session_id's unique
+  // constraint and reporting it as a 502.
+  const { data: existing } = await supabase
+    .from("scorecards")
+    .select("id")
+    .eq("session_id", sessionId)
+    .maybeSingle<{ id: string }>();
+  if (existing) {
+    return NextResponse.json({ scorecardId: existing.id, alreadyScored: true });
+  }
+
   const { data: turnRows, error: turnsError } = await supabase
     .from("turns")
     .select("role, transcript, start_ms, end_ms")

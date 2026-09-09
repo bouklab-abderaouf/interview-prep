@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { BackLink } from "@/components/nav/BackLink";
 import { formatDateTime, formatDuration } from "@/lib/format";
+import { ScoreSessionButton } from "@/components/interview/ScoreSessionButton";
 
 interface SessionRow {
   id: string;
@@ -108,6 +109,10 @@ export default async function InterviewsPage() {
             const roadmap = stage ? roadmapById.get(stage.roadmap_id) : undefined;
             const scorecard = scorecardBySession.get(session.id);
             const turns = turnsBySession.get(session.id) ?? 0;
+            // Anything with captured turns and no scorecard can still be
+            // scored — including sessions marked "abandoned", where the tab
+            // was closed after the turns had already been flushed.
+            const unscoredButRecoverable = !scorecard && turns > 0 && !!session.stage_id;
 
             const body = (
               <div className="flex items-center justify-between gap-4 py-4">
@@ -136,6 +141,11 @@ export default async function InterviewsPage() {
                       </span>
                       <span className="text-lg font-medium tabular-nums">{scorecard.overall}</span>
                     </>
+                  ) : unscoredButRecoverable ? (
+                    // Turns captured, no scorecard: the scoring call failed
+                    // (a transient model 503 does this). The interview is
+                    // intact, so it can simply be scored again.
+                    <ScoreSessionButton sessionId={session.id} label="Score it" />
                   ) : (
                     <span
                       className={`rounded-full px-2.5 py-1 text-xs capitalize ${

@@ -11,6 +11,7 @@ import { connectLiveSession, sendAudioChunk } from "@/lib/live/client";
 import type { TokenResponseBody } from "@/lib/live/types";
 import type { Turn } from "@/lib/metrics/deterministic";
 import { BackLink } from "@/components/nav/BackLink";
+import { ScoreSessionButton } from "@/components/interview/ScoreSessionButton";
 
 // Phase 0 §4 walking-skeleton harness, extended in Phase 3 (§7.1) into the
 // real interview room when a stageId is present: mode: 'full', turn capture,
@@ -51,6 +52,9 @@ export default function SessionPage({
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [stalledWarning, setStalledWarning] = useState<string | null>(null);
+  // Set when scoring failed on a session whose turns are safely persisted, so
+  // the UI can offer to run it again instead of losing the interview.
+  const [scoringRecoverable, setScoringRecoverable] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
   const [ttfaSamples, setTtfaSamples] = useState<number[]>([]);
   const [lastTtfa, setLastTtfa] = useState<number | null>(null);
@@ -232,7 +236,13 @@ export default function SessionPage({
         return;
       } catch (error) {
         console.error("[session] scoring failed", error);
-        setErrorMessage(error instanceof Error ? error.message : String(error));
+        // The turns are already flushed and the session is marked completed,
+        // so this is recoverable — surface the retry rather than stranding a
+        // finished interview behind a console message.
+        setErrorMessage(
+          "Your interview was saved, but scoring failed — usually the model being briefly overloaded.",
+        );
+        setScoringRecoverable(true);
         setStatus("error");
         return;
       }
@@ -243,6 +253,7 @@ export default function SessionPage({
 
   const start = useCallback(async () => {
     setErrorMessage(null);
+    setScoringRecoverable(false);
     clearResponseWatchdog();
     setStatus("connecting");
     endingRef.current = false;
@@ -433,6 +444,7 @@ export default function SessionPage({
       </div>
 
       {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+      {scoringRecoverable && <ScoreSessionButton sessionId={sessionId} label="Try scoring again" />}
       {stalledWarning && <p className="text-sm text-amber-600">{stalledWarning}</p>}
 
       <ul className="flex flex-col gap-1 text-sm">

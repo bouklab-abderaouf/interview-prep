@@ -39,12 +39,22 @@ export async function scoreSession(params: {
   const client = new GoogleGenAI({ apiKey });
   const prompt = buildScoringPrompt(params);
 
-  const response = await withRetry(() =>
-    client.models.generateContent({
-      model,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { responseMimeType: "application/json", responseJsonSchema },
-    }),
+  // More patient than the default, and deliberately so: this runs once, at the
+  // end of an interview that may have taken ten minutes to record, and the
+  // alternative to waiting is the candidate losing that interview's scorecard.
+  // A real 503 burst outlasted the default 2s/4s backoff. Still bounded, and
+  // still capped low enough not to eat the free tier's daily request cap on
+  // one session — the UI can retry deliberately, which is cheaper than
+  // retrying speculatively here.
+  const response = await withRetry(
+    () =>
+      client.models.generateContent({
+        model,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { responseMimeType: "application/json", responseJsonSchema },
+      }),
+    4,
+    3000,
   );
 
   const text = response.text;
