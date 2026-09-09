@@ -136,7 +136,31 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
     .select("id")
     .single();
   if (scorecardError) {
-    console.error("[api/sessions/:id/score] scorecard insert failed", scorecardError);
+    // The already-scored check at the top of this handler is a read, so two
+    // requests for the same session can both pass it and race to insert;
+    // scorecards.session_id's unique constraint then lets exactly one
+    // through. Observed for real — two people pressed "Score it" on the same
+    // session seconds apart. The loser should hand back the winner's
+    // scorecard, because the session *is* scored; reporting a 502 for it
+    // would be a lie, and it is the one case where a retry can never help.
+    const { data: raced } = await supabase
+      .from("scorecards")
+      .select("id")
+      .eq("session_id", sessionId)
+      .maybeSingle<{ id: string }>();
+    if (raced) {
+      return NextResponse.json({ scorecardId: raced.id, alreadyScored: true });
+    }
+
+    // PostgrestError's fields are non-enumerable, so logging the object
+    // itself prints "{}" — which is exactly what the first occurrence of
+    // this left in the log, and told us nothing.
+    console.error("[api/sessions/:id/score] scorecard insert failed", {
+      message: scorecardError.message,
+      code: scorecardError.code,
+      details: scorecardError.details,
+      hint: scorecardError.hint,
+    });
     return NextResponse.json({ error: "scorecard_insert_failed" }, { status: 502 });
   }
 

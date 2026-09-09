@@ -123,8 +123,11 @@ Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
   scoring call runs, so a failed score never costs the interview — but until
   recently nothing could ask for one again, and a transient Gemini 503 left an
   11-minute session permanently unscored with only a console message. Scoring
-  is now idempotent (a second POST returns the existing scorecard rather than
-  tripping `scorecards.session_id`'s unique constraint), and any session with
+  is now idempotent — a second POST returns the existing scorecard rather than
+  tripping `scorecards.session_id`'s unique constraint, and because that check
+  is a read, two concurrent requests can both pass it, so a losing insert
+  re-reads and returns the winner's scorecard instead of reporting a 502 for a
+  session that is in fact scored. Any session with
   captured turns and no scorecard offers to run it — from the interview room
   where it failed, and from `/interviews` afterwards. Abandoned sessions
   qualify too: closing the tab still flushes the turns.
