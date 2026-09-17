@@ -20,6 +20,8 @@ interface BuildScoringPromptParams {
   candidate: CandidateFacts;
   metrics: DeterministicMetrics;
   language: InterviewLanguage;
+  drill?: boolean;
+  targetQuestion?: string;
 }
 
 function formatTranscript(turns: Turn[]): string {
@@ -37,15 +39,31 @@ export function buildScoringPrompt({
   candidate,
   metrics,
   language,
+  drill,
+  targetQuestion,
 }: BuildScoringPromptParams): string {
-  return [
-    "You are scoring a completed mock interview transcript.",
+  const lines = [
+    drill
+      ? "You are scoring a completed TARGETED QUESTION DRILL (short focused practice session)."
+      : "You are scoring a completed mock interview transcript.",
     "",
     `Write all text output in ${language === "fr" ? "French" : "English"}.`,
     "Be harsh and specific about a genuinely weak answer. Do not be sycophantic about a genuinely good one — grounded, specific praise only.",
     "Every strength's quote_from_answer must be copied verbatim from the candidate's transcript lines below — do not paraphrase or invent a quote.",
     "Model answers must use facts from the candidate's own CV (skills and projects listed below), not invented experience.",
     "You are given deterministic metrics (pace, filler rate, talk ratio, pause length) already computed — comment on them, do not recompute them.",
+  ];
+
+  if (drill && targetQuestion) {
+    lines.push(
+      "",
+      `TARGET DRILL QUESTION: "${targetQuestion}"`,
+      "Evaluate specifically how well the candidate structured and delivered their answer to this exact question using the STAR method (Situation, Task, Action, Result).",
+      "For model_answers: provide an exemplary, high-impact STAR response to this specific question, strictly grounded in the candidate's actual skills and projects.",
+    );
+  }
+
+  lines.push(
     "",
     `Stage focus areas: ${focusAreas.join(", ")}`,
     `Stage question bank: ${questionBank.join(" | ")}`,
@@ -60,5 +78,7 @@ export function buildScoringPrompt({
     formatTranscript(turns),
     "",
     "Output JSON matching the provided schema, nothing else.",
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }

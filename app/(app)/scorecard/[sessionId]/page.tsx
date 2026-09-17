@@ -30,9 +30,18 @@ export default async function ScorecardPage({
   const [{ data: session }, { data: turns }] = await Promise.all([
     supabase
       .from("sessions")
-      .select("stage_id, started_at, duration_seconds")
+      .select("stage_id, started_at, duration_seconds, usage")
       .eq("id", sessionId)
-      .maybeSingle<{ stage_id: string | null; started_at: string; duration_seconds: number | null }>(),
+      .maybeSingle<{
+        stage_id: string | null;
+        started_at: string;
+        duration_seconds: number | null;
+        usage: {
+          drill?: boolean;
+          targetQuestion?: string | null;
+          targets?: string | null;
+        } | null;
+      }>(),
     supabase
       .from("turns")
       .select("role, transcript")
@@ -86,6 +95,8 @@ export default async function ScorecardPage({
         improvements={scorecard.improvements}
         modelAnswers={scorecard.model_answers}
         turns={turns ?? []}
+        isDrill={Boolean(session?.usage?.drill)}
+        drillQuestion={session?.usage?.targetQuestion}
       />
     </div>
   );

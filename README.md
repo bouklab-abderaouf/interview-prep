@@ -71,6 +71,12 @@ an interactive voice & scorecard preview and repository link.
   for the interviewer, alongside a real-time self-camera mirror feed for posture,
   framing, and eye contact practice. Microphone capture is strictly decoupled
   from camera video so denying camera access never halts the voice interview.
+- **Targeted Question Drill Mode.** Practice individual high-stakes questions
+  and uncomfortable CV gaps in rapid 2-minute audio drill sessions. Launchable
+  directly from stage question banks or the Recommended Drills card on the
+  roadmap. Features dedicated drill arcs (`DRILL_ARC`) with 1 targeted follow-up
+  probe, a dedicated in-room question HUD, focused STAR evaluation, and tailored
+  model answers grounded in your CV.
 - **A gamified roadmap.** `/roadmap/[id]` draws the four stages as a
   serpentine skill tree — grey/locked with a lock icon, blue/pulsing when
   available, amber with stars once attempted — over a progress path that
@@ -378,3 +384,4 @@ npm run dev
 - [x] Navigation — app shell, hub, interview history, document list, back links
       (unspecced; the app was seven leaf pages with no way between them)
 - [x] Phase 5 — ship (automated cleanup, roadmap/document deletion, interview filtering, and landing showcase)
+- [x] Phase 6 — targeted question drill mode (2-min audio drills on individual questions & CV gaps, drill HUD, dedicated DRILL_ARC, and instant STAR scoring)

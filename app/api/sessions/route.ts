@@ -3,7 +3,11 @@ import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
 
-const RequestSchema = z.object({ stageId: z.string() });
+const RequestSchema = z.object({
+  stageId: z.string(),
+  drill: z.boolean().optional(),
+  questionIndex: z.number().int().min(0).optional(),
+});
 
 // specs §7.1 — create a session row when a stage interview starts. The
 // session-scoped client means RLS ("stages of own roadmaps") does the
@@ -29,13 +33,17 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
-  const { stageId } = parsed.data;
+  const { stageId, drill, questionIndex } = parsed.data;
 
   const { data: stage, error: stageError } = await supabase
     .from("stages")
-    .select("id, roadmaps(language)")
+    .select("id, question_bank, roadmaps(language)")
     .eq("id", stageId)
-    .maybeSingle<{ id: string; roadmaps: { language: "fr" | "en" } | null }>();
+    .maybeSingle<{
+      id: string;
+      question_bank: Array<{ text: string; targets: string; follow_ups?: string[] }> | null;
+      roadmaps: { language: "fr" | "en" } | null;
+    }>();
   if (stageError || !stage) {
     return NextResponse.json({ error: "stage_not_found" }, { status: 404 });
   }
@@ -52,6 +60,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "stage_locked" }, { status: 403 });
   }
 
+  const qBank = Array.isArray(stage.question_bank) ? stage.question_bank : [];
+  const targetQ =
+    drill && questionIndex !== undefined && qBank[questionIndex]
+      ? qBank[questionIndex]
+      : drill && qBank[0]
+        ? qBank[0]
+        : null;
+
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
     .insert({
@@ -60,6 +76,15 @@ export async function POST(request: Request) {
       mode: "full",
       language: stage.roadmaps?.language ?? "fr",
       status: "active",
+      usage: drill
+        ? {
+            drill: true,
+            questionIndex: questionIndex ?? 0,
+            targetQuestion: targetQ?.text ?? null,
+            targets: targetQ?.targets ?? null,
+            follow_ups: targetQ?.follow_ups ?? [],
+          }
+        : {},
     })
     .select("id")
     .single();

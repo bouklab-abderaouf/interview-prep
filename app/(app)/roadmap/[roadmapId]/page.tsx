@@ -6,6 +6,7 @@ import { BackLink } from "@/components/nav/BackLink";
 import { SkillTree } from "@/components/roadmap/SkillTree";
 import { XpBar } from "@/components/roadmap/XpBar";
 import { DeleteRoadmapButton } from "@/components/roadmap/DeleteRoadmapButton";
+import { RecommendedDrillsCard } from "@/components/roadmap/RecommendedDrillsCard";
 import type { RoadmapStage, StageProgress } from "@/components/roadmap/types";
 
 // specs §8.1 — skill tree with four stage nodes, XP bar and streak counter in
@@ -22,14 +23,22 @@ export default async function RoadmapPage({
 
   const { data: roadmap } = await supabase
     .from("roadmaps")
-    .select("id, target_role, company")
+    .select("id, target_role, company, gap_analysis")
     .eq("id", roadmapId)
-    .maybeSingle();
+    .maybeSingle<{
+      id: string;
+      target_role: string;
+      company: string | null;
+      gap_analysis: {
+        gaps?: Array<{ requirement: string; severity: "blocking" | "significant" | "minor"; mitigation_angle: string }>;
+        risk_questions?: string[];
+      } | null;
+    }>();
   if (!roadmap) notFound();
 
   const { data: stages } = await supabase
     .from("stages")
-    .select("id, order_index, slug, title, description, focus_areas, pass_score")
+    .select("id, order_index, slug, title, description, focus_areas, pass_score, question_bank")
     .eq("roadmap_id", roadmapId)
     .order("order_index", { ascending: true })
     .returns<RoadmapStage[]>();
@@ -76,7 +85,21 @@ export default async function RoadmapPage({
       </header>
 
       {stages && stages.length > 0 ? (
-        <SkillTree stages={stages} progressByStageId={progressByStageId} />
+        <>
+          <SkillTree stages={stages} progressByStageId={progressByStageId} />
+          <RecommendedDrillsCard
+            stages={stages}
+            gaps={roadmap.gap_analysis?.gaps}
+            riskQuestions={roadmap.gap_analysis?.risk_questions}
+            unlockedStageIds={
+              new Set(
+                (progressRows ?? [])
+                  .filter((p) => p.unlocked)
+                  .map((p) => p.stage_id),
+              )
+            }
+          />
+        </>
       ) : (
         /* The orphan a failed /api/analyze leaves behind: a roadmap row with
            no stages. An empty skill tree is just a blank box, so explain it. */

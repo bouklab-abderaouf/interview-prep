@@ -36,6 +36,8 @@ const TokenRequestSchema = z
   .object({
     mode: z.enum(["demo", "full"]),
     stageId: z.string().optional(),
+    drill: z.boolean().optional(),
+    questionIndex: z.number().int().min(0).optional(),
     // Not in specs §4.1's original request shape, but §5.2 requires the
     // widget solved before minting anything — has to travel somehow.
     turnstileToken: z.string().optional(),
@@ -69,7 +71,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
   }
 
-  const { mode, stageId, turnstileToken, language: requestedLanguage } = parsed.data;
+  const { mode, stageId, drill, questionIndex, turnstileToken, language: requestedLanguage } = parsed.data;
 
   // specs §5.3 — enforced in this exact order, demo mode only. 'full' mode's
   // guard is an auth check, which doesn't exist until Phase 2.
@@ -143,11 +145,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "stage_locked" }, { status: 403 });
     }
 
+    const qBank = z.array(StageQuestionSchema).parse(stage.question_bank);
+    const targetQ =
+      drill && questionIndex !== undefined && qBank[questionIndex]
+        ? qBank[questionIndex]
+        : drill && qBank[0]
+          ? qBank[0]
+          : null;
+
     stageContext = {
       title: stage.title,
       focusAreas: stage.focus_areas,
       persona: StagePersonaSchema.parse(stage.persona),
-      questionBank: z.array(StageQuestionSchema).parse(stage.question_bank),
+      questionBank: qBank,
+      drill: targetQ
+        ? {
+            targetQuestion: targetQ.text,
+            targets: targetQ.targets,
+            followUps: targetQ.follow_ups,
+          }
+        : undefined,
     };
     stageLanguage = stage.roadmaps?.language;
   }

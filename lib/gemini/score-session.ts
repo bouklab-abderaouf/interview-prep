@@ -29,6 +29,8 @@ export async function scoreSession(params: {
   candidate: CandidateFacts;
   metrics: DeterministicMetrics;
   language: InterviewLanguage;
+  drill?: boolean;
+  targetQuestion?: string;
 }): Promise<ScorecardType> {
   const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_TEXT_MODEL;

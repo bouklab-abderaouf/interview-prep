@@ -5,6 +5,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { StageNode } from "./StageNode";
 import { StartStageButton } from "./StartStageButton";
+import { DrillButton } from "./DrillButton";
 import { stageStateFor, type RoadmapStage, type StageProgress } from "./types";
 
 interface SkillTreeProps {
@@ -192,13 +193,58 @@ export function SkillTree({ stages, progressByStageId }: SkillTreeProps) {
                 </div>
               </dl>
 
-              {selectedProgress?.unlocked ? (
-                <StartStageButton stageId={selected.id} />
-              ) : (
-                <p className="text-sm text-zinc-500">
-                  Locked — score at least {selected.pass_score} on the previous stage to unlock this one.
-                </p>
+              {/* Question Drills for this stage */}
+              {selected.question_bank && selected.question_bank.length > 0 && (
+                <div className="flex flex-col gap-2.5 border-t border-zinc-200/80 pt-3 dark:border-zinc-800">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                      <span>⚡ Targeted Drills</span>
+                      <span className="text-[10px] font-normal text-zinc-500">(2m practice)</span>
+                    </span>
+                    <span className="text-[10px] text-zinc-500">
+                      {selected.question_bank.length} questions
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
+                    {selected.question_bank.map((q, idx) => (
+                      <div
+                        key={idx}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-zinc-200/60 bg-zinc-50/70 p-2.5 text-xs dark:border-zinc-800/80 dark:bg-zinc-900/60"
+                      >
+                        <div className="flex flex-1 flex-col gap-0.5">
+                          <p className="font-medium text-zinc-800 dark:text-zinc-200">{q.text}</p>
+                          <p className="text-[10px] text-zinc-500">Probing: {q.targets}</p>
+                        </div>
+                        <div className="self-end sm:self-center shrink-0">
+                          <DrillButton
+                            stageId={selected.id}
+                            questionIndex={idx}
+                            isLocked={!selectedProgress?.unlocked}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
+
+              <div className="flex items-center justify-between border-t border-zinc-200/80 pt-3 dark:border-zinc-800">
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
+                    Full Stage Interview
+                  </span>
+                  <span className="text-[10px] text-zinc-500">
+                    10 min full evaluation
+                  </span>
+                </div>
+                {selectedProgress?.unlocked ? (
+                  <StartStageButton stageId={selected.id} label="Start Stage" />
+                ) : (
+                  <p className="text-xs text-zinc-500">
+                    Locked — pass stage {selected.order_index} first.
+                  </p>
+                )}
+              </div>
             </motion.div>
           </>
         )}

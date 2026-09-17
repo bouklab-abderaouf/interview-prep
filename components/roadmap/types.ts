@@ -1,3 +1,9 @@
+export interface RoadmapQuestion {
+  text: string;
+  targets: string;
+  follow_ups: string[];
+}
+
 export interface RoadmapStage {
   id: string;
   order_index: number;
@@ -6,6 +12,7 @@ export interface RoadmapStage {
   description: string | null;
   focus_areas: string[];
   pass_score: number;
+  question_bank?: RoadmapQuestion[];
 }
 
 export interface StageProgress {

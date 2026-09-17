@@ -21,13 +21,18 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
 
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
-    .select("id, stage_id, language, duration_seconds")
+    .select("id, stage_id, language, duration_seconds, usage")
     .eq("id", sessionId)
     .maybeSingle<{
       id: string;
       stage_id: string | null;
       language: InterviewLanguage;
       duration_seconds: number | null;
+      usage: {
+        drill?: boolean;
+        targetQuestion?: string;
+        targets?: string;
+      } | null;
     }>();
   if (sessionError || !session || !session.stage_id) {
     return NextResponse.json({ error: "session_not_found" }, { status: 404 });
@@ -90,6 +95,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
 
   const metrics = computeDeterministicMetrics(turns, session.language);
 
+  const isDrill = Boolean(session.usage?.drill);
+  const targetQuestion = session.usage?.targetQuestion ?? undefined;
+
   let scorecard;
   try {
     scorecard = await scoreSession({
@@ -100,17 +108,21 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
       candidate: gapAnalysis.candidate,
       metrics,
       language: session.language,
+      drill: isDrill,
+      targetQuestion,
     });
   } catch (error) {
     console.error("[api/sessions/:id/score] scoring failed", error);
     return NextResponse.json({ error: "scoring_failed" }, { status: 502 });
   }
 
-  // specs §7.3 — xp = round(overall * 1.5) + duration_bonus. duration_bonus
-  // isn't specced further; 1 XP per minute spent is a reasonable, documented
-  // reading, not a literal spec value.
+  // specs §7.3 — xp = round(overall * 1.5) + duration_bonus. For a 2-minute
+  // drill, scale XP appropriately (+15 to +45 XP) so it rewards focused practice
+  // without distorting level progression.
   const durationBonus = Math.round((session.duration_seconds ?? 0) / 60);
-  const xpAwarded = Math.round(scorecard.overall * 1.5) + durationBonus;
+  const xpAwarded = isDrill
+    ? Math.max(15, Math.round(scorecard.overall * 0.4)) + durationBonus
+    : Math.round(scorecard.overall * 1.5) + durationBonus;
   const stars = scorecard.overall >= 85 ? 3 : scorecard.overall >= 70 ? 2 : scorecard.overall >= 55 ? 1 : 0;
 
   const { data: scorecardRow, error: scorecardError } = await supabase

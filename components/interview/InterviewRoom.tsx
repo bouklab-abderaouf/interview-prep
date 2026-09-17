@@ -31,6 +31,9 @@ interface InterviewRoomProps {
   errorMessage?: string | null;
   stalledWarning?: string | null;
   scoringRecoverable?: boolean;
+  isDrill?: boolean;
+  drillQuestion?: string | null;
+  drillTargets?: string | null;
 }
 
 export function InterviewRoom({
@@ -54,6 +57,9 @@ export function InterviewRoom({
   errorMessage,
   stalledWarning,
   scoringRecoverable,
+  isDrill = false,
+  drillQuestion,
+  drillTargets,
 }: InterviewRoomProps) {
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [showCaptions, setShowCaptions] = useState(true);
@@ -115,6 +121,34 @@ export function InterviewRoom({
           )}
         </div>
       </header>
+
+      {/* ── Drill HUD Banner ────────────────────────────────────── */}
+      {isDrill && (
+        <div className="border-b border-amber-500/20 bg-gradient-to-r from-amber-950/40 via-amber-900/20 to-zinc-950 px-6 py-2.5 backdrop-blur-md">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                  ⚡ 2-Min Targeted Drill
+                </span>
+                {drillTargets && (
+                  <span className="text-[11px] text-zinc-400">
+                    Probing: <span className="font-medium text-zinc-200">{drillTargets}</span>
+                  </span>
+                )}
+              </div>
+              {drillQuestion && (
+                <p className="text-sm font-semibold text-zinc-100">
+                  &ldquo;{drillQuestion}&rdquo;
+                </p>
+              )}
+            </div>
+            <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-300">
+              <span>Goal: Clean STAR delivery</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Stalled Warning & Error Banners ──────────────────────── */}
       {stalledWarning && (
@@ -236,10 +270,14 @@ export function InterviewRoom({
               type="button"
               onClick={onStart}
               disabled={isBusy}
-              className="flex items-center gap-2 rounded-full bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-emerald-500 active:scale-95 disabled:opacity-50"
+              className={`flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition-all active:scale-95 disabled:opacity-50 ${
+                isDrill
+                  ? "bg-amber-600 hover:bg-amber-500 shadow-amber-900/40"
+                  : "bg-emerald-600 hover:bg-emerald-500"
+              }`}
             >
               <span className="h-2 w-2 rounded-full bg-white animate-ping" />
-              Start Interview
+              {isDrill ? "Start Question Drill" : "Start Interview"}
             </button>
           ) : (
             <button
@@ -249,7 +287,11 @@ export function InterviewRoom({
               className="flex items-center gap-2 rounded-full bg-red-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-red-500 active:scale-95 disabled:opacity-50"
             >
               <span className="h-2 w-2 rounded-full bg-white" />
-              {status === "scoring" ? "Scoring session…" : "Stop & Score"}
+              {status === "scoring"
+                ? "Scoring drill…"
+                : isDrill
+                  ? "Complete Drill & Score"
+                  : "Stop & Score"}
             </button>
           )}
 

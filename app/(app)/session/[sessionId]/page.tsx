@@ -45,8 +45,12 @@ export default function SessionPage({
   params: Promise<{ sessionId: string }>;
 }) {
   const { sessionId } = use(params);
-  const stageId = useSearchParams().get("stageId");
+  const searchParams = useSearchParams();
+  const stageId = searchParams.get("stageId");
   const isRealSession = Boolean(stageId);
+  const isDrillParam = searchParams.get("drill") === "true";
+  const qIndexParam = searchParams.get("qIndex");
+  const parsedQIndex = qIndexParam ? parseInt(qIndexParam, 10) : undefined;
   const router = useRouter();
 
   const [status, setStatus] = useState<Status>("idle");
@@ -61,6 +65,16 @@ export default function SessionPage({
   const [isCandidateSpeaking, setIsCandidateSpeaking] = useState(false);
   const [isInterviewerSpeaking, setIsInterviewerSpeaking] = useState(false);
   const interviewerSpeakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [drillInfo, setDrillInfo] = useState<{
+    isDrill: boolean;
+    targetQuestion?: string | null;
+    targets?: string | null;
+    questionIndex?: number;
+  }>({
+    isDrill: isDrillParam,
+    questionIndex: parsedQIndex,
+  });
 
   const [stageInfo, setStageInfo] = useState<{
     title: string;
@@ -80,7 +94,7 @@ export default function SessionPage({
     async function loadStage() {
       const { data: stage } = await supabase
         .from("stages")
-        .select("id, title, persona, roadmap_id")
+        .select("id, title, persona, roadmap_id, question_bank")
         .eq("id", stageId!)
         .maybeSingle<{
           id: string;
@@ -92,7 +106,39 @@ export default function SessionPage({
             strictness: number;
           };
           roadmap_id: string;
+          question_bank: Array<{ text: string; targets: string }> | null;
         }>();
+
+      const { data: sessionRow } = await supabase
+        .from("sessions")
+        .select("usage")
+        .eq("id", sessionId)
+        .maybeSingle<{
+          usage: {
+            drill?: boolean;
+            targetQuestion?: string | null;
+            targets?: string | null;
+            questionIndex?: number;
+          } | null;
+        }>();
+
+      const isDrill = Boolean(sessionRow?.usage?.drill || isDrillParam);
+      const qIndex = sessionRow?.usage?.questionIndex ?? parsedQIndex;
+      const targetQ =
+        sessionRow?.usage?.targetQuestion ??
+        (stage?.question_bank && qIndex !== undefined ? stage.question_bank[qIndex]?.text : null);
+      const targetProbe =
+        sessionRow?.usage?.targets ??
+        (stage?.question_bank && qIndex !== undefined ? stage.question_bank[qIndex]?.targets : null);
+
+      if (isDrill) {
+        setDrillInfo({
+          isDrill: true,
+          targetQuestion: targetQ,
+          targets: targetProbe,
+          questionIndex: qIndex,
+        });
+      }
 
       if (stage) {
         const { data: roadmap } = await supabase
@@ -110,7 +156,7 @@ export default function SessionPage({
       }
     }
     void loadStage();
-  }, [stageId]);
+  }, [stageId, sessionId, isDrillParam, parsedQIndex]);
 
   const sessionRef = useRef<Session | null>(null);
   const recorderRef = useRef<AudioRecorderHandle | null>(null);
@@ -339,7 +385,16 @@ export default function SessionPage({
       const tokenRes = await fetch("/api/live/token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(isRealSession ? { mode: "full", stageId } : { mode: "full" }),
+        body: JSON.stringify(
+          isRealSession
+            ? {
+                mode: "full",
+                stageId,
+                drill: drillInfo.isDrill,
+                questionIndex: drillInfo.questionIndex,
+              }
+            : { mode: "full" },
+        ),
       });
 
       if (!tokenRes.ok) {
@@ -463,6 +518,8 @@ export default function SessionPage({
     cancelPendingActivityEnd,
     captureTranscriptChunk,
     clearResponseWatchdog,
+    drillInfo.isDrill,
+    drillInfo.questionIndex,
     flushAccumulatedTurn,
     flushTurns,
     isRealSession,
@@ -497,6 +554,9 @@ export default function SessionPage({
         errorMessage={errorMessage}
         stalledWarning={stalledWarning}
         scoringRecoverable={scoringRecoverable}
+        isDrill={drillInfo.isDrill}
+        drillQuestion={drillInfo.targetQuestion}
+        drillTargets={drillInfo.targets}
       />
     </main>
   );

@@ -36,6 +36,8 @@ export interface ScorecardViewProps {
   improvements: ImprovementItem[];
   modelAnswers: ModelAnswerItem[];
   turns: TranscriptTurn[];
+  isDrill?: boolean;
+  drillQuestion?: string | null;
 }
 
 // Only pace_wpm's range (120-160) comes from the spec directly (§7.4's own
@@ -66,9 +68,27 @@ export function ScorecardView({
   improvements,
   modelAnswers,
   turns,
+  isDrill,
+  drillQuestion,
 }: ScorecardViewProps) {
   return (
     <div className="flex flex-col gap-10">
+      {isDrill && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 dark:border-amber-500/20 dark:bg-amber-950/20">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              ⚡ Targeted Question Drill Feedback
+            </span>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">2-Minute Focused Evaluation</span>
+          </div>
+          {drillQuestion && (
+            <p className="mt-2 text-base font-semibold text-zinc-900 dark:text-zinc-100">
+              &ldquo;{drillQuestion}&rdquo;
+            </p>
+          )}
+        </div>
+      )}
+
       <section className="flex items-center gap-6">
         <ScoreRing score={overall} />
         <div className="flex flex-col gap-1">

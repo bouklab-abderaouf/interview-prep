@@ -30,6 +30,7 @@ This guide is the single operational source of truth for AI agents (and human de
 - **Navigation Shell**: Persistent nav bar (Home, Interviews, Documents), back links, and interview history.
 - **Phase 5 (Shipping)**: Failure cleanup, document/roadmap deletion APIs, interview status filters, and interactive demo preview.
 - **Virtual Video Interview Room**: Audio-reactive 3D avatar (WebGL) + self-camera mirror practice feed with strictly decoupled camera/mic streams.
+- **Phase 6 (Targeted Question Drill Mode)**: Rapid 2-minute drills on individual stage questions and CV gaps, dedicated `DRILL_ARC` with 1 follow-up probe, in-room drill HUD, and scaled XP scoring.
 
 ---
 
@@ -111,6 +112,11 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **Decoupled Media Streams**: Microphone acquisition is strictly managed by `requestMicrophone()` (`lib/audio/mic.ts`). The self-camera mirror feed (`VideoMirror.tsx`) requests `{ video: true, audio: false }` independently.
 - **Why**: Denying webcam permission, toggling camera off, or camera hardware failures must NEVER block the voice interview or abort the WebSocket connection.
 - **Client-Only Three.js**: Three.js WebGL canvas in `Avatar3D.tsx` runs strictly client-side with animation frames cancelled and geometries/materials properly disposed on unmount to prevent WebGL context leaks across routes.
+
+### G. Targeted Question Drill Mode & Prompt Arc
+- **Targeted Drill Arc**: In `lib/prompts/interviewer.ts`, drills bypass the standard multi-stage interview arc and use `DRILL_ARC`: the interviewer introduces the specific question directly on Turn 1, evaluates candidate depth, and asks at most 1 sharp follow-up probe before concluding.
+- **Session Metadata**: Drills are stored as `sessions.usage = { drill: true, targetQuestion, targets, questionIndex }`, avoiding schema migrations or RLS check alterations while preserving full compatibility with turn capture and scoring pipelines.
+- **Scaled XP**: Drills award scaled XP (+15 to +40 XP based on overall performance and duration) to encourage focused daily question practice without distorting level progression.
 
 ---
 

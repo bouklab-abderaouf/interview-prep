@@ -3,11 +3,18 @@ import type { DemoScenario } from "@/lib/fixtures/demo-scenario";
 import type { StagePersonaSchema, StageQuestionSchema } from "@/lib/gemini/schemas";
 import type { z } from "zod";
 
+export interface DrillContext {
+  targetQuestion: string;
+  targets: string;
+  followUps: string[];
+}
+
 export interface StageContext {
   title: string;
   focusAreas: string[];
   persona: z.infer<typeof StagePersonaSchema>;
   questionBank: z.infer<typeof StageQuestionSchema>[];
+  drill?: DrillContext;
 }
 
 interface BuildInterviewerPromptParams {
@@ -24,6 +31,21 @@ interface BuildInterviewerPromptParams {
 const OPENING: Record<InterviewLanguage, string> = {
   fr: "Tu es un recruteur technique qui mène un entretien d'embauche oral.",
   en: "You are a technical recruiter conducting a live spoken job interview.",
+};
+
+const DRILL_ARC: Record<InterviewLanguage, (q: string, followUps: string[]) => string> = {
+  fr: (q, followUps) => [
+    "Ceci est un DRILL CIBLÉ (séance d'entraînement rapide de 2 minutes sur une seule question clé) :",
+    `1) Tour 1 : Salue très brièvement le candidat, présente la question cible directement : "${q}", et invite-le à répondre comme en conditions réelles. Ne commence pas par un monologue d'introduction.`,
+    `2) Tour 2 : Écoute attentivement sa réponse. Si sa réponse manque de précision ou de structure STAR, pose UNE relance ciblée parmi : ${followUps.length ? followUps.join(" OU ") : "demande un exemple concret et son impact mesurable"}. Si la réponse est déjà complète, remercie-le et dis en une phrase que le drill est terminé.`,
+    "3) Ne pose aucune autre question de fond. Après la relance, conclus la séance pour qu'il puisse voir son analyse.",
+  ].join(" "),
+  en: (q, followUps) => [
+    "This is a TARGETED DRILL (focused 2-minute practice session on one single high-impact question):",
+    `1) Turn 1: Greet the candidate very briefly, introduce the target question directly: "${q}", and invite them to answer as in a real interview. Do not make a lengthy introductory speech.`,
+    `2) Turn 2: Listen carefully to their answer. If it lacks precision or STAR structure, ask EXACTLY ONE focused follow-up from: ${followUps.length ? followUps.join(" OR ") : "ask for a concrete example and its measurable impact"}. If the answer was already comprehensive, thank them and conclude in one brief sentence.`,
+    "3) Do not ask any other questions. After the follow-up, wrap up the drill so they can see their score.",
+  ].join(" "),
 };
 
 // Real interviews open broad and narrow down. Without this, the model treats
@@ -75,6 +97,8 @@ export function buildInterviewerPrompt({
   scenario,
   stageContext,
 }: BuildInterviewerPromptParams): string {
+  const isDrill = Boolean(stageContext?.drill);
+
   const lines = [
     OPENING[language],
     "Ask one question at a time and wait for the candidate's full answer before responding.",
@@ -82,7 +106,9 @@ export function buildInterviewerPrompt({
     language === "fr"
       ? "Réponds toujours en français."
       : "Always respond in English.",
-    CONVERSATION_ARC[language],
+    isDrill && stageContext?.drill
+      ? DRILL_ARC[language](stageContext.drill.targetQuestion, stageContext.drill.followUps)
+      : CONVERSATION_ARC[language],
     NON_ANSWER_HANDLING[language],
   ];
 
@@ -103,7 +129,7 @@ export function buildInterviewerPrompt({
   }
 
   if (stageContext) {
-    const { title, focusAreas, persona, questionBank } = stageContext;
+    const { title, focusAreas, persona, questionBank, drill } = stageContext;
     const tone = TONE_DIRECTION[persona.tone][language];
 
     lines.push(
@@ -112,18 +138,16 @@ export function buildInterviewerPrompt({
         : `This stage is "${title}". Adopt the persona of ${persona.name}, ${persona.role} — your tone is ${tone} (strictness ${persona.strictness}/5). Areas to assess: ${focusAreas.join(", ")}.`,
     );
 
-    const questionLines = questionBank
-      .map((q, i) => `${i + 1}. ${q.text}${q.follow_ups.length ? ` (follow-ups: ${q.follow_ups.join(" / ")})` : ""}`)
-      .join("\n");
-    // Deliberately not "in whatever order feels natural", which is what this
-    // said before: banks come back ordered by how pointed the question is, so
-    // "natural" order meant hardest first. The arc above decides the order;
-    // this list is only the material.
-    lines.push(
-      language === "fr"
-        ? `Voici ta banque de questions pour cette étape. Elle n'est pas dans l'ordre : classe-la toi-même, de la plus large à la plus pointue, et suis le déroulé décrit plus haut. Utilise les relances si la réponse est courte ou évasive, et rebondis sur ce que dit le candidat plutôt que de les lire mot pour mot. Tu n'es pas obligé de toutes les poser :\n${questionLines}`
-        : `Here is your question bank for this stage. It is not in running order: sort it yourself from broadest to sharpest and follow the arc described above. Use the follow-ups if an answer is short or evasive, and react to what the candidate actually says rather than reading these verbatim. You do not have to get through all of them:\n${questionLines}`,
-    );
+    if (!drill) {
+      const questionLines = questionBank
+        .map((q, i) => `${i + 1}. ${q.text}${q.follow_ups.length ? ` (follow-ups: ${q.follow_ups.join(" / ")})` : ""}`)
+        .join("\n");
+      lines.push(
+        language === "fr"
+          ? `Voici ta banque de questions pour cette étape. Elle n'est pas dans l'ordre : classe-la toi-même, de la plus large à la plus pointue, et suis le déroulé décrit plus haut. Utilise les relances si la réponse est courte ou évasive, et rebondis sur ce que dit le candidat plutôt que de les lire mot pour mot. Tu n'es pas obligé de toutes les poser :\n${questionLines}`
+          : `Here is your question bank for this stage. It is not in running order: sort it yourself from broadest to sharpest and follow the arc described above. Use the follow-ups if an answer is short or evasive, and react to what the candidate actually says rather than reading these verbatim. You do not have to get through all of them:\n${questionLines}`,
+      );
+    }
   }
 
   return lines.join(" ");
