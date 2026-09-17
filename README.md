@@ -65,6 +65,12 @@ an interactive voice & scorecard preview and repository link.
   timestamps, and scores it into a scorecard on completion — STAR
   breakdown, deterministic communication metrics, grounded strengths and
   improvements, model answers, and XP/stage-unlock progression.
+- **Virtual Video Interview Room (Mirror Practice + 3D Avatar).** `/session/[id]`
+  features a Google Meet / Zoom style video interface: an audio-reactive 3D
+  procedural avatar with natural blinking, breathing, and persona rim lighting
+  for the interviewer, alongside a real-time self-camera mirror feed for posture,
+  framing, and eye contact practice. Microphone capture is strictly decoupled
+  from camera video so denying camera access never halts the voice interview.
 - **A gamified roadmap.** `/roadmap/[id]` draws the four stages as a
   serpentine skill tree — grey/locked with a lock icon, blue/pulsing when
   available, amber with stars once attempted — over a progress path that

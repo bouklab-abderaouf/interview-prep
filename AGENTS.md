@@ -28,7 +28,8 @@ This guide is the single operational source of truth for AI agents (and human de
 - **Phase 3 (Turn Capture & Scoring)**: Per-turn transcript capture, deterministic speech metrics (WPM, filler words, talk ratio), Gemini scorecard grading, and recovery mechanisms.
 - **Phase 4 (Gamified Progression)**: Serpentine skill tree, XP bar (500 XP/level), streak counter, stage detail sheet, database profile triggers.
 - **Navigation Shell**: Persistent nav bar (Home, Interviews, Documents), back links, and interview history.
-- **Phase 5 (Shipping)**: Pending deployment, demo reel, and final polish.
+- **Phase 5 (Shipping)**: Failure cleanup, document/roadmap deletion APIs, interview status filters, and interactive demo preview.
+- **Virtual Video Interview Room**: Audio-reactive 3D avatar (WebGL) + self-camera mirror practice feed with strictly decoupled camera/mic streams.
 
 ---
 
@@ -105,6 +106,11 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **Server-Driven Progression**: Skill tree nodes, XP, streaks, and stage locks are read per request from Postgres (`stages`, `progress`, `profiles`). There is no client-side game state.
 - **Explicit Back Navigation**: Always use explicit destinations (e.g. `<BackLink href="/roadmap/[id]" label="← Back to Roadmap" />`), never `router.back()`. Scorecards can be reached both from interview history and via redirection after an interview, where going "back" lands on an inactive session.
 - **Mid-Interview Locking**: Navigational links are disabled during an active interview session; candidate must click "Stop" to flush turns and grade cleanly.
+
+### F. Virtual Interview Room & Webcam Decoupling
+- **Decoupled Media Streams**: Microphone acquisition is strictly managed by `requestMicrophone()` (`lib/audio/mic.ts`). The self-camera mirror feed (`VideoMirror.tsx`) requests `{ video: true, audio: false }` independently.
+- **Why**: Denying webcam permission, toggling camera off, or camera hardware failures must NEVER block the voice interview or abort the WebSocket connection.
+- **Client-Only Three.js**: Three.js WebGL canvas in `Avatar3D.tsx` runs strictly client-side with animation frames cancelled and geometries/materials properly disposed on unmount to prevent WebGL context leaks across routes.
 
 ---
 

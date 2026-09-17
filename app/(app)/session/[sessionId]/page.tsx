@@ -10,8 +10,8 @@ import { createAudioPlayer, type AudioPlayerHandle } from "@/lib/audio/player";
 import { connectLiveSession, sendAudioChunk } from "@/lib/live/client";
 import type { TokenResponseBody } from "@/lib/live/types";
 import type { Turn } from "@/lib/metrics/deterministic";
-import { BackLink } from "@/components/nav/BackLink";
-import { ScoreSessionButton } from "@/components/interview/ScoreSessionButton";
+import { createClient } from "@/lib/supabase/client";
+import { InterviewRoom } from "@/components/interview/InterviewRoom";
 
 // Phase 0 §4 walking-skeleton harness, extended in Phase 3 (§7.1) into the
 // real interview room when a stageId is present: mode: 'full', turn capture,
@@ -58,6 +58,59 @@ export default function SessionPage({
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
   const [ttfaSamples, setTtfaSamples] = useState<number[]>([]);
   const [lastTtfa, setLastTtfa] = useState<number | null>(null);
+  const [isCandidateSpeaking, setIsCandidateSpeaking] = useState(false);
+  const [isInterviewerSpeaking, setIsInterviewerSpeaking] = useState(false);
+  const interviewerSpeakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [stageInfo, setStageInfo] = useState<{
+    title: string;
+    targetRole?: string;
+    company?: string | null;
+    persona: {
+      name: string;
+      role: string;
+      tone: "warm" | "neutral" | "skeptical";
+      strictness: number;
+    };
+  } | null>(null);
+
+  useEffect(() => {
+    if (!stageId) return;
+    const supabase = createClient();
+    async function loadStage() {
+      const { data: stage } = await supabase
+        .from("stages")
+        .select("id, title, persona, roadmap_id")
+        .eq("id", stageId!)
+        .maybeSingle<{
+          id: string;
+          title: string;
+          persona: {
+            name: string;
+            role: string;
+            tone: "warm" | "neutral" | "skeptical";
+            strictness: number;
+          };
+          roadmap_id: string;
+        }>();
+
+      if (stage) {
+        const { data: roadmap } = await supabase
+          .from("roadmaps")
+          .select("target_role, company")
+          .eq("id", stage.roadmap_id)
+          .maybeSingle<{ target_role: string; company: string | null }>();
+
+        setStageInfo({
+          title: stage.title,
+          targetRole: roadmap?.target_role,
+          company: roadmap?.company,
+          persona: stage.persona,
+        });
+      }
+    }
+    void loadStage();
+  }, [stageId]);
 
   const sessionRef = useRef<Session | null>(null);
   const recorderRef = useRef<AudioRecorderHandle | null>(null);
@@ -211,6 +264,11 @@ export default function SessionPage({
     clearResponseWatchdog();
     if (flushIntervalRef.current) clearInterval(flushIntervalRef.current);
     flushIntervalRef.current = null;
+    setIsCandidateSpeaking(false);
+    setIsInterviewerSpeaking(false);
+    if (interviewerSpeakingTimeoutRef.current) {
+      clearTimeout(interviewerSpeakingTimeoutRef.current);
+    }
     // Flush whatever's still mid-turn (e.g. the interviewer was talking when
     // the user hit Stop) before it's lost.
     flushAccumulatedTurn("candidate", candidateAccRef);
@@ -269,13 +327,13 @@ export default function SessionPage({
     let micStream: MediaStream;
     try {
       micStream = await requestMicrophone();
+      micStreamRef.current = micStream;
     } catch (error) {
-      console.error("[session start] microphone", error);
+      console.error("[session start] mic permission failed", error);
       setErrorMessage(describeMicError(error));
       setStatus("error");
       return;
     }
-    micStreamRef.current = micStream;
 
     try {
       const tokenRes = await fetch("/api/live/token", {
@@ -305,6 +363,14 @@ export default function SessionPage({
         onAudioChunk: (chunk) => {
           player.enqueue(chunk);
           clearResponseWatchdog();
+          setIsInterviewerSpeaking(true);
+          if (interviewerSpeakingTimeoutRef.current) {
+            clearTimeout(interviewerSpeakingTimeoutRef.current);
+          }
+          interviewerSpeakingTimeoutRef.current = setTimeout(() => {
+            setIsInterviewerSpeaking(false);
+          }, 450);
+
           if (awaitingFirstAudioRef.current && activityEndAtRef.current !== null) {
             const ttfa = performance.now() - activityEndAtRef.current;
             awaitingFirstAudioRef.current = false;
@@ -323,10 +389,14 @@ export default function SessionPage({
           flushAccumulatedTurn("candidate", candidateAccRef);
         },
 
-        onTurnComplete: () => flushAccumulatedTurn("interviewer", interviewerAccRef),
+        onTurnComplete: () => {
+          setIsInterviewerSpeaking(false);
+          flushAccumulatedTurn("interviewer", interviewerAccRef);
+        },
 
         onInterrupted: () => {
           player.interrupt();
+          setIsInterviewerSpeaking(false);
         },
 
         onInputTranscript: (text, finished) => {
@@ -342,6 +412,7 @@ export default function SessionPage({
         onError: (error) => {
           console.error("[live session] error", error);
           clearResponseWatchdog();
+          setIsInterviewerSpeaking(false);
           setErrorMessage(String(error));
           setStatus("error");
         },
@@ -349,6 +420,8 @@ export default function SessionPage({
         onClose: (info) => {
           console.error("[live session] closed", info);
           clearResponseWatchdog();
+          setIsInterviewerSpeaking(false);
+          setIsCandidateSpeaking(false);
           // stop() is already mid-flush/score for this close — don't let a
           // late, unrelated status update stomp over "scoring" or whatever
           // stop() lands on when it finishes.
@@ -368,8 +441,12 @@ export default function SessionPage({
 
       recorderRef.current = await startRecording(micStream, {
         onChunk: (chunk) => sendAudioChunk(session, chunk),
-        onLocalActivityStart: cancelPendingActivityEnd,
+        onLocalActivityStart: () => {
+          setIsCandidateSpeaking(true);
+          cancelPendingActivityEnd();
+        },
         onLocalActivityEnd: () => {
+          setIsCandidateSpeaking(false);
           markActivityEnd();
           startResponseWatchdog();
           flushAccumulatedTurn("candidate", candidateAccRef);
@@ -396,64 +473,31 @@ export default function SessionPage({
   ]);
 
   const median = percentile(ttfaSamples, 0.5);
-  const p90 = percentile(ttfaSamples, 0.9);
 
   return (
-    <main className="flex flex-1 flex-col gap-6 p-8">
-      {/* Below the app header, not under it — the shell's bar is sticky. */}
-      <div className="fixed top-20 right-4 z-20 rounded border border-zinc-300 bg-white/90 p-3 text-sm text-zinc-900 shadow">
-        <div>TTFA: {lastTtfa !== null ? `${Math.round(lastTtfa)} ms` : "—"}</div>
-        <div>median: {median !== null ? `${Math.round(median)} ms` : "—"}</div>
-        <div>p90: {p90 !== null ? `${Math.round(p90)} ms` : "—"}</div>
-      </div>
-
-      {/* Only offer a way out when there's nothing live to lose: mid-session,
-          Stop is the correct exit because it flushes turns and scores. A
-          client-side <Link> would skip the beforeunload flush entirely. */}
-      {(status === "idle" || status === "error") && (
-        <BackLink href={isRealSession ? "/interviews" : "/home"}>
-          {isRealSession ? "Interviews" : "Home"}
-        </BackLink>
-      )}
-
-      <div className="flex flex-col gap-1">
-        <h1 className="text-lg font-medium">
-          {isRealSession ? "Interview room" : "Voice loop test"}
-        </h1>
-        <p className="text-xs text-zinc-500">Session {sessionId}</p>
-      </div>
-
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={start}
-          disabled={status === "connecting" || status === "connected" || status === "scoring"}
-          className="rounded border border-zinc-400 px-4 py-2"
-        >
-          Start
-        </button>
-        <button
-          type="button"
-          onClick={() => void stop()}
-          disabled={status === "idle" || status === "connecting" || status === "scoring"}
-          className="rounded border border-zinc-400 px-4 py-2"
-        >
-          Stop
-        </button>
-        <span className="self-center text-sm text-zinc-500">status: {status}</span>
-      </div>
-
-      {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
-      {scoringRecoverable && <ScoreSessionButton sessionId={sessionId} label="Try scoring again" />}
-      {stalledWarning && <p className="text-sm text-amber-600">{stalledWarning}</p>}
-
-      <ul className="flex flex-col gap-1 text-sm">
-        {transcript.map((line, index) => (
-          <li key={index}>
-            <strong>{line.role}:</strong> {line.text}
-          </li>
-        ))}
-      </ul>
+    <main className="flex flex-1 flex-col h-[calc(100vh-57px)] w-full overflow-hidden">
+      <InterviewRoom
+        sessionId={sessionId}
+        isRealSession={isRealSession}
+        status={status}
+        onStart={() => void start()}
+        onStop={() => void stop()}
+        transcript={transcript}
+        isInterviewerSpeaking={isInterviewerSpeaking}
+        isCandidateSpeaking={isCandidateSpeaking}
+        interviewerName={stageInfo?.persona?.name ?? "AI Interviewer"}
+        interviewerRole={stageInfo?.persona?.role ?? "Technical Evaluator"}
+        interviewerTone={stageInfo?.persona?.tone ?? "neutral"}
+        strictness={stageInfo?.persona?.strictness ?? 3}
+        stageTitle={stageInfo?.title ?? (isRealSession ? "Interview Session" : "Voice Loop Smoke Test")}
+        targetRole={stageInfo?.targetRole}
+        company={stageInfo?.company}
+        lastTtfa={lastTtfa}
+        medianTtfa={median}
+        errorMessage={errorMessage}
+        stalledWarning={stalledWarning}
+        scoringRecoverable={scoringRecoverable}
+      />
     </main>
   );
 }
