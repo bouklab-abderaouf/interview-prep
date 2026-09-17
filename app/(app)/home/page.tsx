@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { XpBar } from "@/components/roadmap/XpBar";
+import { DeleteRoadmapButton } from "@/components/roadmap/DeleteRoadmapButton";
 import { formatDate, formatDuration } from "@/lib/format";
 
 interface RoadmapRow {
@@ -145,33 +146,40 @@ export default async function HomePage() {
                       {formatDate(roadmap.created_at)}.
                     </span>
                   </div>
-                  <Link
-                    href="/onboarding"
-                    className="shrink-0 text-sm text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Try again
-                  </Link>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <Link
+                      href="/onboarding"
+                      className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      Try again
+                    </Link>
+                    <DeleteRoadmapButton roadmapId={roadmap.id} compact label="Discard" />
+                  </div>
                 </li>
               );
             }
 
             return (
               <li key={roadmap.id}>
-                <Link
-                  href={`/roadmap/${roadmap.id}`}
-                  className="flex items-center justify-between gap-4 rounded-lg border border-zinc-200 p-4 transition-colors hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600"
-                >
-                  <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between gap-4 rounded-lg border border-zinc-200 p-4 transition-colors hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600">
+                  <Link href={`/roadmap/${roadmap.id}`} className="flex flex-1 flex-col gap-1">
                     {title}
                     <span className="text-sm text-zinc-500">
                       {attempted} of {roadmapStages.length} stages attempted &middot; {unlocked}{" "}
                       unlocked &middot; created {formatDate(roadmap.created_at)}
                     </span>
+                  </Link>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <DeleteRoadmapButton roadmapId={roadmap.id} compact label="Delete" />
+                    <Link
+                      href={`/roadmap/${roadmap.id}`}
+                      className="text-sm text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                      aria-label={`Open ${roadmap.target_role} roadmap`}
+                    >
+                      &rarr;
+                    </Link>
                   </div>
-                  <span className="text-sm text-zinc-400" aria-hidden>
-                    &rarr;
-                  </span>
-                </Link>
+                </div>
               </li>
             );
           })}

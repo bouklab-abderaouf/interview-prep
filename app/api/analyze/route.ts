@@ -69,6 +69,7 @@ export async function POST(request: Request) {
     .single();
   if (cvDocError) {
     console.error("[api/analyze] cv document insert failed", cvDocError);
+    await cleanupFailedAnalysis(supabase, { storagePath });
     return NextResponse.json({ error: "cv_document_insert_failed" }, { status: 502 });
   }
 
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
     .single();
   if (jdDocError) {
     console.error("[api/analyze] jd document insert failed", jdDocError);
+    await cleanupFailedAnalysis(supabase, { storagePath, cvDocId: cvDoc.id });
     return NextResponse.json({ error: "jd_document_insert_failed" }, { status: 502 });
   }
 
@@ -88,6 +90,7 @@ export async function POST(request: Request) {
     gapAnalysis = await analyzeGap({ cvBytes, jdText, language: lang });
   } catch (error) {
     console.error("[api/analyze] gap analysis failed", error);
+    await cleanupFailedAnalysis(supabase, { storagePath, cvDocId: cvDoc.id, jdDocId: jdDoc.id });
     return NextResponse.json({ error: "analysis_failed" }, { status: 502 });
   }
 
@@ -109,6 +112,7 @@ export async function POST(request: Request) {
     .single();
   if (roadmapError) {
     console.error("[api/analyze] roadmap insert failed", roadmapError);
+    await cleanupFailedAnalysis(supabase, { storagePath, cvDocId: cvDoc.id, jdDocId: jdDoc.id });
     return NextResponse.json({ error: "roadmap_insert_failed" }, { status: 502 });
   }
 
@@ -131,6 +135,12 @@ export async function POST(request: Request) {
     .select("id, order_index");
   if (stagesError) {
     console.error("[api/analyze] stages insert failed", stagesError);
+    await cleanupFailedAnalysis(supabase, {
+      storagePath,
+      cvDocId: cvDoc.id,
+      jdDocId: jdDoc.id,
+      roadmapId: roadmap.id,
+    });
     return NextResponse.json({ error: "stages_insert_failed" }, { status: 502 });
   }
 
@@ -144,9 +154,43 @@ export async function POST(request: Request) {
   const { error: progressError } = await supabase.from("progress").insert(progressRows);
   if (progressError) {
     console.error("[api/analyze] progress insert failed", progressError);
+    await cleanupFailedAnalysis(supabase, {
+      storagePath,
+      cvDocId: cvDoc.id,
+      jdDocId: jdDoc.id,
+      roadmapId: roadmap.id,
+    });
     return NextResponse.json({ error: "progress_insert_failed" }, { status: 502 });
   }
 
   // 7. Return { roadmapId }.
   return NextResponse.json({ roadmapId: roadmap.id });
 }
+
+async function cleanupFailedAnalysis(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  resources: {
+    storagePath?: string;
+    cvDocId?: string;
+    jdDocId?: string;
+    roadmapId?: string;
+  },
+) {
+  try {
+    if (resources.roadmapId) {
+      await supabase.from("roadmaps").delete().eq("id", resources.roadmapId);
+    }
+    if (resources.cvDocId) {
+      await supabase.from("documents").delete().eq("id", resources.cvDocId);
+    }
+    if (resources.jdDocId) {
+      await supabase.from("documents").delete().eq("id", resources.jdDocId);
+    }
+    if (resources.storagePath) {
+      await supabase.storage.from("cvs").remove([resources.storagePath]);
+    }
+  } catch (cleanupErr) {
+    console.error("[api/analyze] cleanup on failure encountered error", cleanupErr);
+  }
+}
+

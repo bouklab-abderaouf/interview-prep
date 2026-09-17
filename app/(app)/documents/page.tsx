@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { createClient } from "@/lib/supabase/server";
 import { BackLink } from "@/components/nav/BackLink";
+import { DeleteDocumentButton } from "@/components/ui/DeleteDocumentButton";
 import { formatDateTime } from "@/lib/format";
 
 interface DocumentRow {
@@ -119,6 +120,9 @@ export default async function DocumentsPage() {
                     ) : (
                       <span className="text-xs text-zinc-400">File unavailable</span>
                     )}
+                    {!roadmap && (
+                      <DeleteDocumentButton documentId={doc.id} label="Discard" />
+                    )}
                   </div>
                 </li>
               );
@@ -154,14 +158,19 @@ export default async function DocumentsPage() {
                         {!roadmap && " · analysis didn't finish"}
                       </span>
                     </div>
-                    {roadmap && (
-                      <Link
-                        href={`/roadmap/${roadmap.id}`}
-                        className="shrink-0 text-sm text-blue-600 hover:underline dark:text-blue-400"
-                      >
-                        Roadmap
-                      </Link>
-                    )}
+                    <div className="flex shrink-0 items-center gap-4 text-sm">
+                      {roadmap && (
+                        <Link
+                          href={`/roadmap/${roadmap.id}`}
+                          className="text-blue-600 hover:underline dark:text-blue-400"
+                        >
+                          Roadmap
+                        </Link>
+                      )}
+                      {!roadmap && (
+                        <DeleteDocumentButton documentId={doc.id} label="Discard" />
+                      )}
+                    </div>
                   </div>
 
                   {truncated ? (

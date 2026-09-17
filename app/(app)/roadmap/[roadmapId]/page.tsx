@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { BackLink } from "@/components/nav/BackLink";
 import { SkillTree } from "@/components/roadmap/SkillTree";
 import { XpBar } from "@/components/roadmap/XpBar";
+import { DeleteRoadmapButton } from "@/components/roadmap/DeleteRoadmapButton";
 import type { RoadmapStage, StageProgress } from "@/components/roadmap/types";
 
 // specs §8.1 — skill tree with four stage nodes, XP bar and streak counter in
@@ -61,12 +62,15 @@ export default async function RoadmapPage({
       <BackLink href="/home">All roadmaps</BackLink>
 
       <header className="flex flex-col gap-4">
-        <div>
-          <h1 className="text-xl font-medium">
-            {roadmap.target_role}
-            {roadmap.company ? ` at ${roadmap.company}` : ""}
-          </h1>
-          <p className="text-sm text-zinc-500">Four stages. Clear one to unlock the next.</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-medium">
+              {roadmap.target_role}
+              {roadmap.company ? ` at ${roadmap.company}` : ""}
+            </h1>
+            <p className="text-sm text-zinc-500">Four stages. Clear one to unlock the next.</p>
+          </div>
+          <DeleteRoadmapButton roadmapId={roadmap.id} redirectToHome label="Delete roadmap" />
         </div>
         <XpBar totalXp={profile?.total_xp ?? 0} streakDays={profile?.streak_days ?? 0} />
       </header>
@@ -81,12 +85,15 @@ export default async function RoadmapPage({
           <p className="mt-1 text-sm text-zinc-500">
             The gap analysis didn&rsquo;t finish. Start over with your CV and the job description.
           </p>
-          <Link
-            href="/onboarding"
-            className="mt-4 inline-block rounded bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
-          >
-            Build a new roadmap
-          </Link>
+          <div className="mt-4 flex items-center justify-center gap-4">
+            <Link
+              href="/onboarding"
+              className="inline-block rounded bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+            >
+              Build a new roadmap
+            </Link>
+            <DeleteRoadmapButton roadmapId={roadmap.id} redirectToHome label="Delete this roadmap" />
+          </div>
         </div>
       )}
     </main>

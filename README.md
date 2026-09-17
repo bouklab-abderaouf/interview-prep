@@ -42,7 +42,10 @@ reachable only by typing its URL: no shell, no back links, no list of past
 interviews, no list of uploaded documents, and signing back in dropped you
 into the wizard that builds a *new* roadmap rather than anywhere you'd been.
 
-Phase 5 — shipping — is not built yet. See [Roadmap](#roadmap) below.
+**Phase 5** (shipping & polish) is built: automatic cleanup on failed analyses,
+roadmap and document deletion APIs with confirmation UI, interview history
+status filtering with quick scoring recovery, and a polished landing page with
+an interactive voice & scorecard preview and repository link.
 
 ## What's here right now
 
@@ -368,4 +371,4 @@ npm run dev
 - [x] Phase 4 — gamified roadmap (skill tree, XP, streaks, stage sheet, Start)
 - [x] Navigation — app shell, hub, interview history, document list, back links
       (unspecced; the app was seven leaf pages with no way between them)
-- [ ] Phase 5 — ship
+- [x] Phase 5 — ship (automated cleanup, roadmap/document deletion, interview filtering, and landing showcase)
