@@ -150,6 +150,15 @@ export function InterviewRoom({
         </div>
       )}
 
+      {/* specs §9 — EU AI Act Art. 50 transparency. The persona has a human
+          name and a 3D face, so say plainly, before Start, that it's an AI. */}
+      {status === "idle" && (
+        <div className="border-b border-blue-800/40 bg-blue-950/40 px-6 py-2 text-center text-xs text-blue-200">
+          You&apos;ll be speaking with an AI interviewer, not a person.
+          {isRealSession && ` ${interviewerName} is a simulated persona generated for this stage.`}
+        </div>
+      )}
+
       {/* ── Stalled Warning & Error Banners ──────────────────────── */}
       {stalledWarning && (
         <div className="bg-amber-950/80 border-b border-amber-800/60 px-6 py-2 text-center text-xs text-amber-200">
@@ -170,7 +179,12 @@ export function InterviewRoom({
           <div className="relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-800/90 bg-gradient-to-b from-zinc-900 to-zinc-950 shadow-2xl">
             {/* Interviewer Badges */}
             <div className="absolute top-4 left-4 z-10 flex flex-col gap-0.5 rounded-xl bg-black/60 px-3 py-1.5 backdrop-blur-md">
-              <span className="text-xs font-semibold text-zinc-100">{interviewerName}</span>
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-100">
+                {interviewerName}
+                <span className="rounded bg-blue-500/20 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-blue-300">
+                  AI
+                </span>
+              </span>
               <span className="text-[10px] text-zinc-400">{interviewerRole}</span>
             </div>
 

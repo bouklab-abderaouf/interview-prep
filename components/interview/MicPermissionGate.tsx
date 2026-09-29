@@ -44,6 +44,11 @@ export function MicPermissionGate({ onGranted }: MicPermissionGateProps) {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* specs §9 — EU AI Act Art. 50 transparency: disclose before the
+          session starts, not somewhere the candidate might never look. */}
+      <p className="font-medium">
+        You&apos;ll be speaking with an AI interviewer, not a person.
+      </p>
       <p>
         This demo is a live spoken interview — it needs your microphone. Your
         voice streams directly to the model for this session only; nothing is

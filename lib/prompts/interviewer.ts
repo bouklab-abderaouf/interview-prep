@@ -79,6 +79,13 @@ const NON_ANSWER_HANDLING: Record<InterviewLanguage, string> = {
   en: "If an answer is empty, inaudible, or doesn't actually address what you asked, say so plainly and ask again — never pretend you got an answer you didn't get.",
 };
 
+// specs §9 — EU AI Act Art. 50. The UI discloses this before the session, but
+// the persona has a human name, so the model must not undo that when asked.
+const AI_DISCLOSURE: Record<InterviewLanguage, string> = {
+  fr: "Tu es une IA. Si le candidat demande si tu es une personne réelle, dis-le honnêtement ; ne prétends jamais être humain.",
+  en: "You are an AI. If the candidate asks whether you are a real person, say so honestly; never claim to be human.",
+};
+
 const TONE_DIRECTION: Record<StageContext["persona"]["tone"], Record<InterviewLanguage, string>> = {
   warm: { fr: "chaleureux et encourageant", en: "warm and encouraging" },
   neutral: { fr: "neutre et professionnel", en: "neutral and professional" },
@@ -110,6 +117,7 @@ export function buildInterviewerPrompt({
       ? DRILL_ARC[language](stageContext.drill.targetQuestion, stageContext.drill.followUps)
       : CONVERSATION_ARC[language],
     NON_ANSWER_HANDLING[language],
+    AI_DISCLOSURE[language],
   ];
 
   if (mode === "demo") {
