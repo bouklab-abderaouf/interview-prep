@@ -116,9 +116,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
     return NextResponse.json({ error: "scoring_failed" }, { status: 502 });
   }
 
-  // specs §7.3 — xp = round(overall * 1.5) + duration_bonus. For a 2-minute
-  // drill, scale XP appropriately (+15 to +45 XP) so it rewards focused practice
-  // without distorting level progression.
+  // specs §7.3 — xp = round(overall * 1.5) + duration_bonus. A 2-minute drill
+  // earns 15–40 XP plus its duration bonus instead, so it rewards focused
+  // practice without distorting level progression.
   const durationBonus = Math.round((session.duration_seconds ?? 0) / 60);
   const xpAwarded = isDrill
     ? Math.max(15, Math.round(scorecard.overall * 0.4)) + durationBonus
@@ -176,41 +176,13 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
     return NextResponse.json({ error: "scorecard_insert_failed" }, { status: 502 });
   }
 
-  // Update this stage's progress: attempts, best_score, stars, completed_at.
-  const { data: progress } = await supabase
-    .from("progress")
-    .select("attempts, best_score, stars")
-    .eq("user_id", userId)
-    .eq("stage_id", session.stage_id)
-    .maybeSingle<{ attempts: number; best_score: number | null; stars: number }>();
-
-  await supabase
-    .from("progress")
-    .update({
-      attempts: (progress?.attempts ?? 0) + 1,
-      best_score: Math.max(progress?.best_score ?? 0, scorecard.overall),
-      stars: Math.max(progress?.stars ?? 0, stars),
-      completed_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId)
-    .eq("stage_id", session.stage_id);
-
-  // specs §7.3 — stage unlocks the next when overall >= stages.pass_score.
-  if (scorecard.overall >= stage.pass_score) {
-    const { data: nextStage } = await supabase
-      .from("stages")
-      .select("id")
-      .eq("roadmap_id", stage.roadmap_id)
-      .eq("order_index", stage.order_index + 1)
-      .maybeSingle<{ id: string }>();
-
-    if (nextStage) {
-      await supabase
-        .from("progress")
-        .update({ unlocked: true })
-        .eq("user_id", userId)
-        .eq("stage_id", nextStage.id);
-    }
+  // A drill is one question and one follow-up, scored against that question
+  // alone — it earns XP but says nothing about the stage as a whole. Letting
+  // it write progress meant a single good 2-minute answer could set the
+  // stage's best_score and stars and unlock the next stage outright, skipping
+  // the full interview the skill tree exists to gate.
+  if (!isDrill) {
+    await recordStageProgress(supabase, userId, session.stage_id, stage, scorecard.overall, stars);
   }
 
   // specs §8.1 — the XP bar and streak counter read from profiles, so the
@@ -241,6 +213,53 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
   }
 
   return NextResponse.json({ scorecardId: scorecardRow.id });
+}
+
+// Update this stage's progress (attempts, best_score, stars, completed_at),
+// then unlock the next stage if this attempt passed.
+async function recordStageProgress(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  stageId: string,
+  stage: { pass_score: number; order_index: number; roadmap_id: string },
+  overall: number,
+  stars: number,
+) {
+  const { data: progress } = await supabase
+    .from("progress")
+    .select("attempts, best_score, stars")
+    .eq("user_id", userId)
+    .eq("stage_id", stageId)
+    .maybeSingle<{ attempts: number; best_score: number | null; stars: number }>();
+
+  await supabase
+    .from("progress")
+    .update({
+      attempts: (progress?.attempts ?? 0) + 1,
+      best_score: Math.max(progress?.best_score ?? 0, overall),
+      stars: Math.max(progress?.stars ?? 0, stars),
+      completed_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .eq("stage_id", stageId);
+
+  // specs §7.3 — stage unlocks the next when overall >= stages.pass_score.
+  if (overall >= stage.pass_score) {
+    const { data: nextStage } = await supabase
+      .from("stages")
+      .select("id")
+      .eq("roadmap_id", stage.roadmap_id)
+      .eq("order_index", stage.order_index + 1)
+      .maybeSingle<{ id: string }>();
+
+    if (nextStage) {
+      await supabase
+        .from("progress")
+        .update({ unlocked: true })
+        .eq("user_id", userId)
+        .eq("stage_id", nextStage.id);
+    }
+  }
 }
 
 function todayUtc(): string {
