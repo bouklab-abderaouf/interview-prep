@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Interview Prep — Agent Operations & Development Guide
 
-This guide is the single operational source of truth for AI agents (and human developers) working on `interview-prep`. It defines the architecture, hard quota constraints, established design patterns, and invariant rules learned through building and verifying Phases 0 through 4.
+This guide is the single operational source of truth for AI agents (and human developers) working on `interview-prep`. It defines the architecture, hard quota constraints, established design patterns, and invariant rules learned through building and verifying Phases 0 through 6.
 
 ---
 
@@ -28,7 +28,7 @@ This guide is the single operational source of truth for AI agents (and human de
 - **Phase 3 (Turn Capture & Scoring)**: Per-turn transcript capture, deterministic speech metrics (WPM, filler words, talk ratio), Gemini scorecard grading, and recovery mechanisms.
 - **Phase 4 (Gamified Progression)**: Serpentine skill tree, XP bar (500 XP/level), streak counter, stage detail sheet, database profile triggers.
 - **Navigation Shell**: Persistent nav bar (Home, Interviews, Documents), back links, and interview history.
-- **Phase 5 (Shipping)**: Failure cleanup, document/roadmap deletion APIs, interview status filters, and interactive demo preview.
+- **Phase 5 (Shipping, partly done)**: Failure cleanup, document/roadmap deletion APIs, interview status filters, interactive demo preview, AI disclosure, upload privacy notice, and `DELETE /api/account`. Still open from specs §9: demo reel, error monitoring, uptime check, three real preps.
 - **Virtual Video Interview Room**: Audio-reactive 3D avatar (WebGL) + self-camera mirror practice feed with strictly decoupled camera/mic streams.
 - **Phase 6 (Targeted Question Drill Mode)**: Rapid 2-minute drills on individual stage questions and CV gaps, dedicated `DRILL_ARC` with 1 follow-up probe, in-room drill HUD, and scaled XP scoring.
 
@@ -98,7 +98,7 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **Client Scopes**:
   - `lib/supabase/server.ts`: User-scoped client (respects RLS) for Server Components and Route Handlers.
   - `lib/supabase/client.ts`: Browser client.
-  - `lib/supabase/admin.ts`: Service-role client (bypasses RLS); strictly restricted to anonymous demo sessions and `usage_counters` (which has no RLS policies by design).
+  - `lib/supabase/admin.ts`: Service-role client (bypasses RLS); strictly restricted to anonymous demo sessions, `usage_counters` (which has no RLS policies by design), and `auth.admin.deleteUser` in `DELETE /api/account` (the user id always comes from verified claims, never the request).
 - **Required Policies & Triggers**:
   - Migration `005_write_policies.sql`: Grants INSERT policies on `stages` and `scorecards` for authenticated users owning the parent roadmap/session.
   - Migration `006_profiles_autocreate.sql`: Uses a `SECURITY DEFINER` trigger on `auth.users` (`handle_new_user()`) to automatically create `profiles` rows upon signup.
@@ -116,7 +116,12 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 ### G. Targeted Question Drill Mode & Prompt Arc
 - **Targeted Drill Arc**: In `lib/prompts/interviewer.ts`, drills bypass the standard multi-stage interview arc and use `DRILL_ARC`: the interviewer introduces the specific question directly on Turn 1, evaluates candidate depth, and asks at most 1 sharp follow-up probe before concluding.
 - **Session Metadata**: Drills are stored as `sessions.usage = { drill: true, targetQuestion, targets, questionIndex }`, avoiding schema migrations or RLS check alterations while preserving full compatibility with turn capture and scoring pipelines.
-- **Scaled XP**: Drills award scaled XP (+15 to +40 XP based on overall performance and duration) to encourage focused daily question practice without distorting level progression.
+- **Scaled XP**: Drills award scaled XP (15–40 XP from the overall score, plus the duration bonus) to encourage focused daily question practice without distorting level progression.
+- **Drills never write `progress`**: In `app/api/sessions/[id]/score/route.ts`, only full interviews call `recordStageProgress`. A drill scores one question, so it must not set a stage's `best_score`/`stars`/`attempts` or unlock the next stage — it once did, letting a single 2-minute answer skip a whole stage.
+
+### H. AI Disclosure & User Data
+- **AI Disclosure (specs §9, EU AI Act Art. 50)**: Every entry point to a Live session must say the candidate is speaking with an AI *before* the session starts — `MicPermissionGate` for `/demo`, the idle banner in `InterviewRoom` for `/session/[id]`. The interviewer tile keeps a permanent "AI" label, and `AI_DISCLOSURE` in `lib/prompts/interviewer.ts` forbids the persona from claiming to be human. A new session entry point needs the same notice.
+- **Account Deletion (`app/api/account/route.ts`)**: Every user-owned table cascades from `auth.users`, so deleting the auth user removes all rows. Storage has no cascade: the user's `cvs/{userId}/` folder is emptied first, and if that fails the account is left intact. A new user-owned table must reference `auth.users` (directly or through a parent) `on delete cascade`; a new storage bucket must be cleared in this route.
 
 ---
 
@@ -126,7 +131,7 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 interview-prep/
 ├── app/
 │   ├── (app)/                   # Authenticated application routes
-│   │   ├── documents/           # List of uploaded CVs (signed URLs) & JDs
+│   │   ├── documents/           # Uploaded CVs (signed URLs) & JDs, plus "Your data" / account deletion
 │   │   ├── home/                # Main hub: roadmaps, stage progress, recent interviews
 │   │   ├── interviews/          # History of all sessions with scores & "Score it" retry
 │   │   ├── onboarding/          # CV upload + JD intake wizard
@@ -136,9 +141,13 @@ interview-prep/
 │   │   └── layout.tsx           # App shell wrapping authenticated pages with AppNav
 │   ├── (marketing)/             # Public landing page & /sample-scorecard
 │   ├── api/
+│   │   ├── account/             # DELETE: full account deletion (storage, then auth user)
 │   │   ├── analyze/             # Gap analysis & roadmap generator (PDF CV + text JD)
 │   │   ├── demo/                # Guardrailed token generator for public demo
+│   │   ├── documents/[id]/      # DELETE: unlinked document (+ stored CV)
 │   │   ├── live/token/          # Ephemeral token minter for authenticated interviews
+│   │   ├── roadmaps/[id]/       # DELETE: roadmap, its sessions, and unshared documents
+│   │   ├── sessions/            # POST: create a full or drill session for an unlocked stage
 │   │   └── sessions/[id]/       # Turn flushing (PATCH) & session scoring (POST /score)
 │   ├── auth/                    # Magic-link confirm (/auth/confirm) and sign-out
 │   ├── demo/                    # Public 2-minute guarded interview demo

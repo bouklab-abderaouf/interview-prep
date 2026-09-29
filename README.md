@@ -42,10 +42,13 @@ reachable only by typing its URL: no shell, no back links, no list of past
 interviews, no list of uploaded documents, and signing back in dropped you
 into the wizard that builds a *new* roadmap rather than anywhere you'd been.
 
-**Phase 5** (shipping & polish) is built: automatic cleanup on failed analyses,
-roadmap and document deletion APIs with confirmation UI, interview history
-status filtering with quick scoring recovery, and a polished landing page with
-an interactive voice & scorecard preview and repository link.
+**Phase 5** (ship) is partly built. Done: automatic cleanup on failed
+analyses, roadmap and document deletion with confirmation UI, interview
+history status filtering with quick scoring recovery, a landing page with an
+interactive voice & scorecard preview and repository link, the AI disclosure
+before every session, the upload-page privacy notice, and full account
+deletion. Still open from specs §9: the demo reel, error monitoring, an uptime
+check, and the three real interview preps — see [Roadmap](#roadmap).
 
 ## What's here right now
 
@@ -76,7 +79,8 @@ an interactive voice & scorecard preview and repository link.
   directly from stage question banks or the Recommended Drills card on the
   roadmap. Features dedicated drill arcs (`DRILL_ARC`) with 1 targeted follow-up
   probe, a dedicated in-room question HUD, focused STAR evaluation, and tailored
-  model answers grounded in your CV.
+  model answers grounded in your CV. Drills earn XP but never touch stage
+  progress — see Architecture.
 - **A gamified roadmap.** `/roadmap/[id]` draws the four stages as a
   serpentine skill tree — grey/locked with a lock icon, blue/pulsing when
   available, amber with stars once attempted — over a progress path that
@@ -88,6 +92,14 @@ an interactive voice & scorecard preview and repository link.
   Interviews / Documents, an explicit back link on every leaf page, a hub
   listing your roadmaps and recent interviews, a full interview history with
   scores, and a document list with signed links to the CVs you uploaded.
+- **Your data, deletable.** The upload page says what happens to a CV, how
+  long it's kept and how to delete it; roadmaps (with their interviews and
+  documents) can be deleted from Home or the roadmap page, and
+  `/documents` deletes the whole account.
+- **AI disclosure.** Both the demo and the interview room say "You'll be
+  speaking with an AI interviewer, not a person" before a session starts, the
+  interviewer tile carries a permanent AI label, and the prompt forbids the
+  persona from claiming to be human (specs §9, EU AI Act Art. 50).
 - **A full Postgres schema** (Supabase), RLS enabled on every table from the
   first migration, not retrofitted.
 
@@ -182,6 +194,18 @@ an interactive voice & scorecard preview and repository link.
   every request and hands the client plain data. Unlocking is decided by
   `/api/sessions/[id]/score` writing `progress`, never by the UI. The one
   piece of client state is which node's sheet is open.
+- **Drills don't move the skill tree.** A drill is one question and one
+  follow-up, scored against that question alone, so it awards XP and updates
+  the streak but never writes `progress`. It used to go through the same path
+  as a full interview, which meant one good 2-minute answer could set a
+  stage's best score and stars and unlock the next stage outright.
+- **Account deletion.** `DELETE /api/account` empties the user's folder in
+  the `cvs` bucket first (listing the folder, not trusting
+  `documents.storage_path`, so leftovers from a failed analysis go too), then
+  deletes the auth user with the service-role client; every user-owned table
+  cascades from `auth.users`. Storage goes first because it has no cascade: if
+  that step fails, the account is left intact to retry rather than deleted
+  with its CVs still in the bucket.
 - **Navigation.** `/home` is the hub and the post-sign-in landing page; it
   redirects to `/onboarding` only when you have no roadmaps at all, so the
   wizard is the first-run screen rather than the front door. Back links name
@@ -219,6 +243,8 @@ an interactive voice & scorecard preview and repository link.
 | Interview arc | Enforced in the interviewer prompt, and the bank is ordered at generation time | The prompt fix reaches roadmaps that already exist; the generation fix only reaches new ones |
 | Scoring retries | 4 attempts server-side, plus a manual retry in the UI | Each automatic retry spends one of 20 daily free-tier requests; a deliberate retry is cheaper than a speculative one |
 | Question-bank arc | Encoded as array order, not a `phase` field per question | `GapAnalysis` already sits at Gemini's undocumented structured-output complexity budget; another field risks re-triggering the 400 |
+| Drill scoring | XP and streak only, no `progress` write | A single-question drill isn't evidence about a whole stage, and letting it unlock one bypassed the interview the tree gates |
+| Account deletion | Delete the auth user and let FKs cascade, storage cleared first | One source of truth for "what belongs to a user"; storage is the only thing the cascade can't reach |
 
 ## Setup
 
@@ -241,7 +267,9 @@ Fill in `.env.local`:
   changes over time; this repo has already hit both mid-build.
 - **`NEXT_PUBLIC_SUPABASE_URL`**, **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**,
   **`SUPABASE_SERVICE_ROLE_KEY`** — from your Supabase project's API
-  settings. Apply the migrations in `supabase/migrations/` in order.
+  settings. Apply the migrations in `supabase/migrations/` in order. The
+  service-role key is used for the demo's guardrails and for account
+  deletion only.
 - **`TURNSTILE_SECRET_KEY`**, **`NEXT_PUBLIC_TURNSTILE_SITE_KEY`** — from the
   [Cloudflare Turnstile dashboard](https://dash.cloudflare.com). Required
   for the `/demo` guardrails; without them the demo fails closed rather than
@@ -273,7 +301,8 @@ npm run dev
 - `/interviews` — every session you've run, scored or not, with duration,
   turn count and score. Scored rows open their scorecard.
 - `/documents` — the CVs and job descriptions behind each roadmap. CVs get a
-  one-hour signed URL; the `cvs` bucket is private.
+  one-hour signed URL; the `cvs` bucket is private. The "Your data" section
+  at the bottom deletes the account.
 - `/roadmap/[roadmapId]` — the skill tree: XP bar, streak, four stage nodes,
   and the Start button that creates a session and drops you into the
   interview room.
@@ -318,14 +347,13 @@ npm run dev
   the one session scored since — rather than 66. Backfilling from existing
   `scorecards` would be a few lines; it isn't worth doing for two throwaway
   test sessions.
-- **A failed `/api/analyze` attempt leaves an orphaned `roadmaps` row.**
-  Documents and the roadmap insert happen before stages; if anything after
-  that fails, there's no cleanup. This stopped being invisible once the app
-  grew list pages — a real account has one such roadmap and several unlinked
-  documents — so `/home`, `/roadmap/[id]` and `/documents` all detect the
-  zero-stage case and say "analysis didn't finish" instead of rendering a
-  dead card or an empty skill tree. Labelling it is not fixing it: the rows
-  still want a transaction or a cleanup pass.
+- **Failed analyses clean up after themselves, but not atomically.**
+  `/api/analyze` now removes the stored CV, documents and roadmap row when a
+  later step fails, as a sequence of best-effort deletes rather than a
+  transaction. Leftovers from before that existed — and anything a cleanup
+  step itself fails to remove — are still labelled "analysis didn't finish"
+  on `/home`, `/roadmap/[id]` and `/documents`, and can be discarded from
+  there.
 - **The Gemini structured-output complexity budget is undocumented.** The
   two-call split works for `GapAnalysis`; `Scorecard` stays one call
   because it's shallow enough not to hit the same budget. If either schema
@@ -352,10 +380,10 @@ npm run dev
   scorecard of mine", and as of the 6m43s session there finally is one worth
   showing — `lib/fixtures/sample-scorecard.ts` just hasn't been swapped for
   it yet. Doing so means deciding how much of a real transcript to publish.
-- **Nothing can be deleted or renamed from the UI.** The document and roadmap
-  lists are read-only: no delete, no rename, no re-analyze against an updated
-  CV. Failed analyses leave orphaned rows (below), and the lists now label
-  them rather than hiding them, but clearing them out still means SQL.
+- **Nothing can be renamed or re-analyzed.** Roadmaps, unlinked documents and
+  the whole account can be deleted from the UI, but there's no rename and no
+  way to re-run the analysis against an updated CV short of deleting the
+  roadmap and starting over.
 - **Roadmaps built before the arc fix still have gap-first question banks.**
   The generation prompt now requires the first question to be a broad opener
   and the pointed ones to come last, but that only affects roadmaps analysed
@@ -365,12 +393,12 @@ npm run dev
   own, which covers the symptom (verified: it now opens with a proper
   introduction against that exact bank), but the stored data is still wrong
   and a re-analysis is the real fix.
-- **The interview history has no filtering or pagination.** Every session is
-  rendered in one list, newest first. Fine at five sessions; not at five
-  hundred.
-- **The demo reel and GitHub link on the landing page are placeholders.**
-  The reel is recorded now that Phase 3's scorecards exist to show off, but
-  hasn't been; the repo link needs to be filled in by hand.
+- **The interview history has no pagination.** It filters by status now, but
+  every session is still fetched and rendered in one list. Fine at five
+  sessions; not at five hundred.
+- **There is no demo reel.** The landing page has an interactive preview and
+  a repository link, but the 45-second reel specs §5.1 and §9 put at the top
+  of it hasn't been recorded.
 
 ## Roadmap
 
@@ -383,5 +411,13 @@ npm run dev
 - [x] Phase 4 — gamified roadmap (skill tree, XP, streaks, stage sheet, Start)
 - [x] Navigation — app shell, hub, interview history, document list, back links
       (unspecced; the app was seven leaf pages with no way between them)
-- [x] Phase 5 — ship (automated cleanup, roadmap/document deletion, interview filtering, and landing showcase)
+- [ ] Phase 5 — ship (specs §9)
+  - [x] Failed-analysis cleanup, roadmap/document deletion, interview filtering, landing showcase
+  - [x] AI disclosure before every session (EU AI Act Art. 50)
+  - [x] Privacy notice on the upload page, and `DELETE /api/account`
+  - [ ] 45-second demo reel on the landing page
+  - [ ] Real scorecard on `/sample-scorecard` instead of the fixture
+  - [ ] Error monitoring with the Live session error path covered
+  - [ ] Uptime check on `/api/demo/status`
+  - [ ] Use it for three real interview preps and write up the outcome
 - [x] Phase 6 — targeted question drill mode (2-min audio drills on individual questions & CV gaps, drill HUD, dedicated DRILL_ARC, and instant STAR scoring)
