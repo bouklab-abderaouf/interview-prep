@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import type { InterviewLanguage } from "@/lib/live/types";
@@ -111,6 +112,23 @@ export function OnboardingForm() {
         the CV and job description you submit here to improve their models.
         Don&apos;t upload anything you wouldn&apos;t want used that way.
       </p>
+
+      {/* specs §9 — privacy notice on the upload page: what happens to the
+          CV, how long it's kept, how to delete it. */}
+      <div className="w-full max-w-xl rounded border border-zinc-300 p-3 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+        <p className="font-medium text-zinc-800 dark:text-zinc-200">What happens to your CV</p>
+        <p className="mt-1">
+          Your CV is sent to Google&apos;s Gemini API together with the job description to
+          build your interview roadmap, and stored in a private bucket only your account can
+          read. Both are kept until you delete them — there&apos;s no automatic expiry. Deleting
+          a roadmap also deletes the documents behind it, and you can delete your whole account
+          from{" "}
+          <Link href="/documents#your-data" className="underline">
+            Documents
+          </Link>
+          .
+        </p>
+      </div>
 
       <form onSubmit={handleSubmit} className="flex w-full max-w-xl flex-col gap-6">
         <div

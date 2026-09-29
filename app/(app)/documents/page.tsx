@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { createClient } from "@/lib/supabase/server";
 import { BackLink } from "@/components/nav/BackLink";
+import { DeleteAccountButton } from "@/components/ui/DeleteAccountButton";
 import { DeleteDocumentButton } from "@/components/ui/DeleteDocumentButton";
 import { formatDateTime } from "@/lib/format";
 
@@ -200,6 +201,23 @@ export default async function DocumentsPage() {
         ) : (
           <p className="text-sm text-zinc-500">No job description saved yet.</p>
         )}
+      </section>
+
+      {/* specs §9 — the upload page's privacy notice links here for "how to
+          delete", so this is where that answer has to live. */}
+      <section
+        id="your-data"
+        className="flex flex-col gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
+      >
+        <h2 className="text-lg font-medium">Your data</h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Your CVs are stored in a private bucket only your account can read; job descriptions,
+          interview transcripts and scorecards are stored alongside them. Nothing expires on its
+          own — it&rsquo;s kept until you delete it. Deleting a roadmap removes its interviews and,
+          if no other roadmap uses them, its CV and job description. Deleting your account removes
+          all of it.
+        </p>
+        <DeleteAccountButton />
       </section>
     </main>
   );
