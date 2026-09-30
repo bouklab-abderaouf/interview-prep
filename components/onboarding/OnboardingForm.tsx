@@ -14,6 +14,17 @@ type Stage = "idle" | "analyzing" | "error";
 
 const SUBSTEPS = ["Reading your CV", "Matching against the role", "Building your path"];
 const CV_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+
+// The two Gemini failures actually seen in practice. Anything else still
+// shows its raw code, which is at least searchable in the server log.
+// Nothing is saved on failure (the route cleans up — confirmed against the live DB after two 503s), and the form keeps the
+// CV and job description, so retrying is just pressing the button again.
+const ANALYZE_ERROR_MESSAGES: Record<string, string> = {
+  model_busy:
+    "Gemini is overloaded right now and didn't respond after several tries. Nothing was saved — wait a few minutes and submit again.",
+  quota_exceeded:
+    "This app hit its Gemini rate limit. Nothing was saved — try again in a minute; if it keeps happening, today's quota is used up and resets tomorrow.",
+};
 const JD_MAX_CHARS = 20000;
 const JD_MIN_CHARS = 50;
 
@@ -79,7 +90,8 @@ export function OnboardingForm() {
       const body = await res.json().catch(() => ({}) as { error?: string; roadmapId?: string });
 
       if (!res.ok || !body.roadmapId) {
-        throw new Error(body.error ?? `analyze returned ${res.status}`);
+        const code = body.error ?? `analyze returned ${res.status}`;
+        throw new Error(ANALYZE_ERROR_MESSAGES[code] ?? code);
       }
 
       router.push(`/roadmap/${body.roadmapId}`);

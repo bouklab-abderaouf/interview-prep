@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { ApiError } from "@google/genai";
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
@@ -91,6 +92,16 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[api/analyze] gap analysis failed", error);
     await cleanupFailedAnalysis(supabase, { storagePath, cvDocId: cvDoc.id, jdDocId: jdDoc.id });
+    // Gemini being overloaded (503, already retried by withRetry) or the free
+    // tier's daily cap (429) are the two failures seen in practice, and they
+    // call for different advice — "try again in a few minutes" vs "tomorrow".
+    // A bare analysis_failed told the user neither.
+    if (error instanceof ApiError && error.status === 503) {
+      return NextResponse.json({ error: "model_busy" }, { status: 503 });
+    }
+    if (error instanceof ApiError && error.status === 429) {
+      return NextResponse.json({ error: "quota_exceeded" }, { status: 429 });
+    }
     return NextResponse.json({ error: "analysis_failed" }, { status: 502 });
   }
 
