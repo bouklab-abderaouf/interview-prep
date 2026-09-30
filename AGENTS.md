@@ -84,9 +84,10 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **Question Bank Generation (`lib/prompts/gap-analysis.ts`)**: The stage question bank array must be ordered: broad opener first, CV-pointed middle, uncomfortable gap/risk questions last.
 
 ### C. Turn Capture & Scoring Resilience
-- **Turn Capture**:
-  - Concatenates delta transcriptions (`inputAudioTranscription`/`outputAudioTranscription`).
-  - Commits turns based on candidate activity-end and assistant `turnComplete` (not the unreliable transcription `finished` flag).
+- **Turn Capture (`lib/live/turn-timeline.ts`)**:
+  - **Timing comes from audio, never from transcription arrival.** The candidate's input transcription arrives late (as the interviewer starts replying); stamping turns by arrival made every pause negative and pace/talk ratio fiction. Candidate spans come from the local energy VAD; interviewer spans from the player's scheduled playback start/end (`enqueue()` return value, `playbackEndsAt()`), cut at `interrupted`.
+  - A finished answer is frozen when the reply starts and committed when the reply ends, once its transcription has arrived. `snapshot()` includes in-flight turns for periodic/tab-close flushes.
+  - Pre-fix sessions are detected by overlapping turns (`timingIsReliable` in `lib/metrics/assessment.ts`); the scorecard hides timing metrics for them.
   - Flushes to PostgreSQL via `PATCH /api/sessions/[id]` periodically (60s timer), on session stop, and on tab close via `fetch(..., { keepalive: true })` (not `sendBeacon`, which cannot send PATCH).
 - **Idempotent Scoring (`app/api/sessions/[id]/score/route.ts`)**:
   - Turns are saved before scoring runs.
@@ -162,7 +163,7 @@ interview-prep/
 │   ├── nav/                     # AppNav header and BackLink component
 │   ├── onboarding/              # File dropzone & JD text area
 │   ├── roadmap/                 # SkillTree, StageNode, StartStageButton, XpBar
-│   ├── scorecard/               # STAR breakdown, radar charts, communication metrics
+│   ├── scorecard/               # Pass meter, score bars, per-question, delivery, transcript
 │   └── ui/                      # Shared buttons, dialogs, badges
 ├── lib/
 │   ├── audio/                   # mic.ts, recorder.ts, player.ts, resample.ts
@@ -178,7 +179,7 @@ interview-prep/
 │   └── worklets/
 │       └── capture-processor.js # Static AudioWorklet (downsamples to 16kHz PCM16)
 ├── supabase/
-│   └── migrations/              # 001_init to 006_profiles_autocreate
+│   └── migrations/              # 001_init to 007_scorecard_per_question
 ├── proxy.ts                     # Next.js 16 proxy convention (session refresh & auth guard)
 └── package.json
 ```

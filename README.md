@@ -65,7 +65,9 @@ check, and the three real interview preps — see [Roadmap](#roadmap).
 - **Real stage-driven interviews.** Once a roadmap exists, `/session/[id]`
   runs an authenticated, gated interview built from that stage's actual
   persona and question bank, captures the transcript with per-turn
-  timestamps, and scores it into a scorecard on completion — STAR
+  timestamps, and scores it into a scorecard on completion — pass mark and
+  what it unlocks, attempt history, per-question scores with "drill this"
+  links, STAR
   breakdown, deterministic communication metrics, grounded strengths and
   improvements, model answers, and XP/stage-unlock progression.
 - **Virtual Video Interview Room (Mirror Practice + 3D Avatar).** `/session/[id]`
@@ -168,14 +170,21 @@ check, and the three real interview preps — see [Roadmap](#roadmap).
   interrogation rather than an interview. The same block tells it to call out
   a non-answer and re-ask instead of accepting it — that same session replied
   "D'accord, je vois" to a candidate who had only said "Bonjour".
-- **Turn capture.** `inputAudioTranscription`/`outputAudioTranscription`
-  arrive as incremental deltas, not full turn text — concatenated per-role
-  and timestamped relative to session start. A turn closes out on
-  activity-end for the candidate and `turnComplete` for the interviewer —
-  signals already proven reliable — not solely on the transcription API's
-  own `finished` flag, which turned out not to reliably fire in practice
-  (a real bug: a full interview produced zero captured turns before this
-  was found). A response watchdog separately flags when the interviewer
+- **Turn capture.** Timing comes from audio, words from transcription —
+  `lib/live/turn-timeline.ts`. Turns used to be stamped with the arrival
+  time of their first transcription delta, but the Live API delivers the
+  candidate's transcription late, right as the interviewer starts replying:
+  a real 7-minute session had every candidate turn starting within 1ms of
+  the interviewer turn beside it, so pauses came out negative ("longest
+  pause 0.0s") and a 112-word answer was timed at 4.6s. The candidate is now
+  timed by the local energy VAD, the interviewer by when its audio is
+  scheduled to start and finish playing (cut short on barge-in), and an
+  answer is committed once the reply to it ends — by which point its late
+  transcription has arrived. Scorecards recorded before the fix are
+  detected by their overlapping turns and hide the timing metrics rather
+  than show wrong ones. (Before that, turns closed on the transcription
+  API's own `finished` flag, which doesn't reliably fire — a full interview
+  once produced zero captured turns.) A response watchdog separately flags when the interviewer
   goes silent for 12s after the candidate stops talking — usually a Live
   API free-tier quota issue, confirmed by bisecting directly against the
   API, not a prompt problem. Flushed to Postgres on a 60s safety timer, on
@@ -242,6 +251,8 @@ check, and the three real interview preps — see [Roadmap](#roadmap).
 | List page joins | Separate queries merged in JS, not PostgREST embedding | `scorecards.session_id` is unique, so an embed's result shape depends on relationship detection; these tables are tiny |
 | Interview arc | Enforced in the interviewer prompt, and the bank is ordered at generation time | The prompt fix reaches roadmaps that already exist; the generation fix only reaches new ones |
 | Scoring retries | 3 attempts per model, then the fallback model, plus a manual retry in the UI | Each automatic retry spends one of the model's daily free-tier requests; a deliberate retry is cheaper than a speculative one |
+| Scorecard charts | Labelled 0–100 bars, not a radar | Four unlabelled spokes hid the actual numbers; bars show them and made `recharts` unnecessary |
+| Avatar | Procedural Three.js bust, mouth driven by output loudness | No external model files or licences, light enough for phones; the look is seeded from the persona name, never inferred from it |
 | Text-model fallback | `GEMINI_TEXT_FALLBACK_MODEL` on 503 (after a retry) or 429 (at once) | Free-tier quotas are per model and 503s count against them: two analyses that got 3 × 503 each left `gemini-3.6-flash` at 5/5 RPM and 12/20 RPD. A second model is a different capacity pool and a separate quota |
 | Question-bank arc | Encoded as array order, not a `phase` field per question | `GapAnalysis` already sits at Gemini's undocumented structured-output complexity budget; another field risks re-triggering the 400 |
 | Drill scoring | XP and streak only, no `progress` write | A single-question drill isn't evidence about a whole stage, and letting it unlock one bypassed the interview the tree gates |
