@@ -53,6 +53,9 @@ The project operates under strict Gemini API constraints on the free tier:
   - Use fixtures (`lib/fixtures/`) and mock data for UI testing.
   - Review network logs and error logs before re-attempting failed requests.
 
+### Model Fallback (`lib/gemini/retry.ts`)
+Free-tier quotas are **per model** (e.g. `gemini-3.6-flash` 5 RPM / 20 RPD, `gemini-3.5-flash-lite` 15 RPM / 500 RPD), and 503 "high demand" refusals are still counted against them. Every text call goes through `withModelFallback(textModels(), ...)`: `GEMINI_TEXT_MODEL` first, then the optional `GEMINI_TEXT_FALLBACK_MODEL`. A 503 is retried briefly on the same model, a 429 moves to the next model at once, and any other error throws. The complexity budget below was bisected against one model — a fallback model may reject a schema the primary accepts, so verify a new fallback against the live API.
+
 ### Structured Output Complexity Budget
 Gemini's structured output engine (`responseJsonSchema`) has an undocumented depth/breadth complexity limit:
 - Schemas with deeply nested arrays (e.g., 3 levels deep like `stages[].questions[].follow_ups[]`) alongside broad top-level objects trigger a generic `400 INVALID_ARGUMENT`.
@@ -89,7 +92,7 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
   - Turns are saved before scoring runs.
   - If already scored, returns existing `scorecardId` with `{ alreadyScored: true }`.
   - Concurrency-safe: If two requests race to insert a scorecard, the unique constraint on `scorecards.session_id` catches the collision, and the loser re-reads and returns the winner's scorecard rather than throwing 502.
-  - Uses `withRetry(..., 4, 3000)` in `lib/gemini/retry.ts` to weather transient 503 "high demand" bursts without failing an 11-minute interview.
+  - Uses `withModelFallback(textModels(), ..., { attemptsPerModel: 3, baseDelayMs: 3000 })` in `lib/gemini/retry.ts` to weather transient 503 "high demand" bursts without failing an 11-minute interview.
   - UI offers manual retry (`ScoreSessionButton`) on `/session/[id]` and in `/interviews`.
 
 ### D. Supabase Auth & RLS Policies
@@ -202,7 +205,7 @@ npm run build
 ### Verification Checklist Before Committing Changes
 1. **Did you add a Live API or Gemini call?**
    - Confirm it cannot be triggered on page load or by a blocked mic.
-   - Confirm it handles 503 retry gracefully via `withRetry`.
+   - Confirm it goes through `withModelFallback(textModels(), ...)`: 503 retries then falls back, 429 falls back immediately (free-tier quotas are per model), anything else throws.
    - Confirm structured output schemas remain shallow or use the two-call split.
 2. **Did you edit database queries?**
    - Confirm RLS policies allow the operation (check `supabase/migrations/`).

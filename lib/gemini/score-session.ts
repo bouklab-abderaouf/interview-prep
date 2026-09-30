@@ -3,7 +3,7 @@ import { toJSONSchema } from "zod";
 
 import { Scorecard, type Scorecard as ScorecardType } from "@/lib/gemini/schemas";
 import { buildScoringPrompt } from "@/lib/prompts/scoring";
-import { withRetry } from "@/lib/gemini/retry";
+import { textModels, withModelFallback } from "@/lib/gemini/retry";
 import type { Turn, DeterministicMetrics } from "@/lib/metrics/deterministic";
 import type { InterviewLanguage } from "@/lib/live/types";
 
@@ -33,10 +33,7 @@ export async function scoreSession(params: {
   targetQuestion?: string;
 }): Promise<ScorecardType> {
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_TEXT_MODEL;
-  if (!apiKey || !model) {
-    throw new Error("GEMINI_API_KEY or GEMINI_TEXT_MODEL not configured");
-  }
+  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
   const client = new GoogleGenAI({ apiKey });
   const prompt = buildScoringPrompt(params);
@@ -48,15 +45,15 @@ export async function scoreSession(params: {
   // still capped low enough not to eat the free tier's daily request cap on
   // one session — the UI can retry deliberately, which is cheaper than
   // retrying speculatively here.
-  const response = await withRetry(
-    () =>
+  const response = await withModelFallback(
+    textModels(),
+    (model) =>
       client.models.generateContent({
         model,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: { responseMimeType: "application/json", responseJsonSchema },
       }),
-    4,
-    3000,
+    { attemptsPerModel: 3, baseDelayMs: 3000, label: "scoring" },
   );
 
   const text = response.text;

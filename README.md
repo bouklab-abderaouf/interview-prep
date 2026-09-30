@@ -241,7 +241,8 @@ check, and the three real interview preps — see [Roadmap](#roadmap).
 | Back navigation | Explicit `href` per page, never `router.back()` | The scorecard is reachable from two directions, one of which is a redirect off a closed session |
 | List page joins | Separate queries merged in JS, not PostgREST embedding | `scorecards.session_id` is unique, so an embed's result shape depends on relationship detection; these tables are tiny |
 | Interview arc | Enforced in the interviewer prompt, and the bank is ordered at generation time | The prompt fix reaches roadmaps that already exist; the generation fix only reaches new ones |
-| Scoring retries | 4 attempts server-side, plus a manual retry in the UI | Each automatic retry spends one of 20 daily free-tier requests; a deliberate retry is cheaper than a speculative one |
+| Scoring retries | 3 attempts per model, then the fallback model, plus a manual retry in the UI | Each automatic retry spends one of the model's daily free-tier requests; a deliberate retry is cheaper than a speculative one |
+| Text-model fallback | `GEMINI_TEXT_FALLBACK_MODEL` on 503 (after a retry) or 429 (at once) | Free-tier quotas are per model and 503s count against them: two analyses that got 3 × 503 each left `gemini-3.6-flash` at 5/5 RPM and 12/20 RPD. A second model is a different capacity pool and a separate quota |
 | Question-bank arc | Encoded as array order, not a `phase` field per question | `GapAnalysis` already sits at Gemini's undocumented structured-output complexity budget; another field risks re-triggering the 400 |
 | Drill scoring | XP and streak only, no `progress` write | A single-question drill isn't evidence about a whole stage, and letting it unlock one bypassed the interview the tree gates |
 | Account deletion | Delete the auth user and let FKs cascade, storage cleared first | One source of truth for "what belongs to a user"; storage is the only thing the cascade can't reach |
@@ -265,6 +266,11 @@ Fill in `.env.local`:
   values against a live `models.list` call for your account before relying
   on the checked-in defaults. Model availability varies by project and
   changes over time; this repo has already hit both mid-build.
+- **`GEMINI_TEXT_FALLBACK_MODEL`** — optional. Used for gap analysis and
+  scoring when `GEMINI_TEXT_MODEL` is overloaded or out of quota; a Flash Lite
+  model has 25× the free-tier daily requests of a Flash one. Verify it
+  accepts the `GapAnalysis` schema before relying on it (see the complexity
+  budget in Known gaps).
 - **`NEXT_PUBLIC_SUPABASE_URL`**, **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**,
   **`SUPABASE_SERVICE_ROLE_KEY`** — from your Supabase project's API
   settings. Apply the migrations in `supabase/migrations/` in order. The
