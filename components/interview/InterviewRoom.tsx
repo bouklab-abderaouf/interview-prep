@@ -19,6 +19,8 @@ interface InterviewRoomProps {
   transcript: TranscriptEntry[];
   isInterviewerSpeaking: boolean;
   isCandidateSpeaking: boolean;
+  /** Live loudness of the interviewer's voice, for the avatar's mouth. */
+  getInterviewerLevel?: () => number;
   interviewerName?: string;
   interviewerRole?: string;
   interviewerTone?: "warm" | "neutral" | "skeptical";
@@ -45,6 +47,7 @@ export function InterviewRoom({
   transcript,
   isInterviewerSpeaking,
   isCandidateSpeaking,
+  getInterviewerLevel,
   interviewerName = "Interviewer",
   interviewerRole = "Lead Evaluator",
   interviewerTone = "neutral",
@@ -196,7 +199,12 @@ export function InterviewRoom({
 
             {/* 3D WebGL Avatar */}
             <div className="relative flex-1 w-full h-full flex items-center justify-center">
-              <Avatar3D isSpeaking={isInterviewerSpeaking} tone={interviewerTone} />
+              <Avatar3D
+                isSpeaking={isInterviewerSpeaking}
+                tone={interviewerTone}
+                getLevel={getInterviewerLevel}
+                seed={interviewerName}
+              />
             </div>
 
             {/* Speaking Audio Indicator Strip */}

@@ -485,6 +485,7 @@ export default function SessionPage({
   ]);
 
   const median = percentile(ttfaSamples, 0.5);
+  const getInterviewerLevel = useCallback(() => playerRef.current?.getLevel() ?? 0, []);
 
   return (
     <main className="flex flex-1 flex-col h-[calc(100vh-57px)] w-full overflow-hidden">
@@ -497,6 +498,7 @@ export default function SessionPage({
         transcript={transcript}
         isInterviewerSpeaking={isInterviewerSpeaking}
         isCandidateSpeaking={isCandidateSpeaking}
+        getInterviewerLevel={getInterviewerLevel}
         interviewerName={stageInfo?.persona?.name ?? "AI Interviewer"}
         interviewerRole={stageInfo?.persona?.role ?? "Technical Evaluator"}
         interviewerTone={stageInfo?.persona?.tone ?? "neutral"}
