@@ -9,7 +9,7 @@ import { describeMicError, requestMicrophone } from "@/lib/audio/mic";
 import { createAudioPlayer, type AudioPlayerHandle } from "@/lib/audio/player";
 import { connectLiveSession, sendAudioChunk } from "@/lib/live/client";
 import type { TokenResponseBody } from "@/lib/live/types";
-import type { Turn } from "@/lib/metrics/deterministic";
+import { TurnTimeline } from "@/lib/live/turn-timeline";
 import { createClient } from "@/lib/supabase/client";
 import { InterviewRoom } from "@/components/interview/InterviewRoom";
 
@@ -23,11 +23,6 @@ type Status = "idle" | "connecting" | "connected" | "scoring" | "error";
 interface TranscriptLine {
   role: "candidate" | "interviewer";
   text: string;
-}
-
-interface TurnAccumulator {
-  text: string;
-  startMs: number | null;
 }
 
 const FLUSH_INTERVAL_MS = 60_000;
@@ -174,43 +169,21 @@ export default function SessionPage({
   // asynchronously while stop() keeps executing past that point.
   const endingRef = useRef(false);
 
-  // Turn capture (specs §7.1) — only meaningful for a real session.
+  // Turn capture (specs §7.1) — only meaningful for a real session. Timing
+  // comes from audio events, words from transcription; see
+  // lib/live/turn-timeline.ts for why those have to be kept apart.
   const sessionStartRef = useRef<number | null>(null);
-  const turnsRef = useRef<Turn[]>([]);
-  const candidateAccRef = useRef<TurnAccumulator>({ text: "", startMs: null });
-  const interviewerAccRef = useRef<TurnAccumulator>({ text: "", startMs: null });
+  const timelineRef = useRef(new TurnTimeline());
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const appendTranscript = useCallback((line: TranscriptLine) => {
     setTranscript((prev) => [...prev, line]);
   }, []);
 
-  // Moves whatever's been accumulated for a role into a finished turn. Called
-  // both opportunistically from a transcription chunk marked `finished`
-  // (unverified in practice whether the API reliably sets this) and — the
-  // mechanism this now actually depends on — from turn-boundary signals
-  // already proven to fire: activity-end for the candidate, turnComplete for
-  // the interviewer. The startMs === null guard makes calling this from
-  // multiple triggers for the same turn safe: whichever fires first flushes
-  // and resets the accumulator, so a later trigger for the same turn is a
-  // harmless no-op instead of a duplicate push.
-  const flushAccumulatedTurn = useCallback(
-    (role: "interviewer" | "candidate", accRef: React.RefObject<TurnAccumulator>) => {
-      if (accRef.current.startMs === null || !accRef.current.text.trim()) return;
-      const now = performance.now();
-      const sessionStart = sessionStartRef.current ?? now;
-      const turn: Turn = {
-        role,
-        transcript: accRef.current.text,
-        start_ms: Math.round(accRef.current.startMs),
-        end_ms: Math.round(now - sessionStart),
-      };
-      turnsRef.current.push(turn);
-      accRef.current = { text: "", startMs: null };
-      appendTranscript({ role, text: turn.transcript });
-    },
-    [appendTranscript],
-  );
+  // ms since session start, the unit turns.start_ms/end_ms are stored in.
+  const sinceStart = useCallback((performanceTime: number = performance.now()) => {
+    return performanceTime - (sessionStartRef.current ?? performanceTime);
+  }, []);
 
   // Shared by the server's real voiceActivityDetectionSignal (allowlist-gated,
   // usually silent — see lib/live/client.ts) and the local energy-based
@@ -252,23 +225,6 @@ export default function SessionPage({
     clearResponseWatchdog();
   }, [clearResponseWatchdog]);
 
-  // inputAudioTranscription/outputAudioTranscription arrive as incremental
-  // deltas, not the full turn text — concatenate until `finished`, then
-  // record start_ms (first chunk) / end_ms (finished chunk) relative to
-  // session start (specs §3 turns.start_ms/end_ms: "ms since session start").
-  const captureTranscriptChunk = useCallback(
-    (role: "interviewer" | "candidate", accRef: React.RefObject<TurnAccumulator>, text: string, finished: boolean) => {
-      const now = performance.now();
-      const sessionStart = sessionStartRef.current ?? now;
-      if (accRef.current.startMs === null) {
-        accRef.current.startMs = now - sessionStart;
-      }
-      accRef.current.text += text;
-      if (finished) flushAccumulatedTurn(role, accRef);
-    },
-    [flushAccumulatedTurn],
-  );
-
   const flushTurns = useCallback(
     async (status?: "completed" | "abandoned" | "errored", keepalive = false) => {
       if (!isRealSession) return;
@@ -276,14 +232,17 @@ export default function SessionPage({
         await fetch(`/api/sessions/${sessionId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ turns: turnsRef.current, ...(status ? { status } : {}) }),
+          body: JSON.stringify({
+            turns: timelineRef.current.snapshot(sinceStart()),
+            ...(status ? { status } : {}),
+          }),
           keepalive,
         });
       } catch (error) {
         console.error("[session] flush failed", error);
       }
     },
-    [isRealSession, sessionId],
+    [isRealSession, sessionId, sinceStart],
   );
 
   // beforeunload can't await a normal fetch, but `keepalive: true` lets the
@@ -315,10 +274,9 @@ export default function SessionPage({
     if (interviewerSpeakingTimeoutRef.current) {
       clearTimeout(interviewerSpeakingTimeoutRef.current);
     }
-    // Flush whatever's still mid-turn (e.g. the interviewer was talking when
+    // Commit whatever's still mid-turn (e.g. the interviewer was talking when
     // the user hit Stop) before it's lost.
-    flushAccumulatedTurn("candidate", candidateAccRef);
-    flushAccumulatedTurn("interviewer", interviewerAccRef);
+    const turns = timelineRef.current.finish(sinceStart());
     recorderRef.current?.stop();
     recorderRef.current = null;
     // stop() on the recorder already stops these tracks; this covers the case
@@ -330,7 +288,7 @@ export default function SessionPage({
     sessionRef.current?.close();
     sessionRef.current = null;
 
-    if (isRealSession && turnsRef.current.length > 0) {
+    if (isRealSession && turns.length > 0) {
       setStatus("scoring");
       await flushTurns("completed");
       try {
@@ -353,7 +311,7 @@ export default function SessionPage({
     }
 
     setStatus("idle");
-  }, [isRealSession, sessionId, flushTurns, flushAccumulatedTurn, clearResponseWatchdog, router]);
+  }, [isRealSession, sessionId, flushTurns, sinceStart, clearResponseWatchdog, router]);
 
   const start = useCallback(async () => {
     setErrorMessage(null);
@@ -362,9 +320,10 @@ export default function SessionPage({
     setStatus("connecting");
     endingRef.current = false;
     sessionStartRef.current = performance.now();
-    turnsRef.current = [];
-    candidateAccRef.current = { text: "", startMs: null };
-    interviewerAccRef.current = { text: "", startMs: null };
+    setTranscript([]);
+    timelineRef.current = new TurnTimeline((turn) =>
+      appendTranscript({ role: turn.role, text: turn.transcript }),
+    );
 
     // The microphone comes first, before a token is minted or the Live socket
     // is opened. Asking last meant a blocked mic still spent a Live API
@@ -416,7 +375,7 @@ export default function SessionPage({
         },
 
         onAudioChunk: (chunk) => {
-          player.enqueue(chunk);
+          timelineRef.current.interviewerAudio(sinceStart(player.enqueue(chunk)));
           clearResponseWatchdog();
           setIsInterviewerSpeaking(true);
           if (interviewerSpeakingTimeoutRef.current) {
@@ -438,30 +397,25 @@ export default function SessionPage({
         onActivityEnd: () => {
           markActivityEnd();
           startResponseWatchdog();
-          // The reliable turn-boundary signal for the candidate — see
-          // flushAccumulatedTurn's comment on why this doesn't depend on
-          // the transcription API's own `finished` flag actually firing.
-          flushAccumulatedTurn("candidate", candidateAccRef);
         },
 
         onTurnComplete: () => {
           setIsInterviewerSpeaking(false);
-          flushAccumulatedTurn("interviewer", interviewerAccRef);
+          timelineRef.current.interviewerTurnEnd(sinceStart(player.playbackEndsAt()));
         },
 
         onInterrupted: () => {
           player.interrupt();
           setIsInterviewerSpeaking(false);
+          timelineRef.current.interviewerInterrupted(sinceStart());
         },
 
-        onInputTranscript: (text, finished) => {
-          console.log("[candidate]", text, finished ? "(final)" : "");
-          captureTranscriptChunk("candidate", candidateAccRef, text, finished);
+        onInputTranscript: (text) => {
+          timelineRef.current.candidateText(sinceStart(), text);
         },
 
-        onOutputTranscript: (text, finished) => {
-          console.log("[interviewer]", text, finished ? "(final)" : "");
-          captureTranscriptChunk("interviewer", interviewerAccRef, text, finished);
+        onOutputTranscript: (text) => {
+          timelineRef.current.interviewerText(sinceStart(), text);
         },
 
         onError: (error) => {
@@ -499,12 +453,13 @@ export default function SessionPage({
         onLocalActivityStart: () => {
           setIsCandidateSpeaking(true);
           cancelPendingActivityEnd();
+          timelineRef.current.candidateSpeechStart(sinceStart());
         },
         onLocalActivityEnd: () => {
           setIsCandidateSpeaking(false);
           markActivityEnd();
           startResponseWatchdog();
-          flushAccumulatedTurn("candidate", candidateAccRef);
+          timelineRef.current.candidateSpeechEnd(sinceStart());
         },
         onError: (error) => console.error("[recorder]", error),
       });
@@ -515,15 +470,15 @@ export default function SessionPage({
       void stop();
     }
   }, [
+    appendTranscript,
     cancelPendingActivityEnd,
-    captureTranscriptChunk,
     clearResponseWatchdog,
     drillInfo.isDrill,
     drillInfo.questionIndex,
-    flushAccumulatedTurn,
     flushTurns,
     isRealSession,
     markActivityEnd,
+    sinceStart,
     stageId,
     startResponseWatchdog,
     stop,
