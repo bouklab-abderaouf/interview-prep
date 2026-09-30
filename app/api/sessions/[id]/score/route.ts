@@ -142,6 +142,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
       strengths: scorecard.strengths,
       improvements: scorecard.improvements,
       model_answers: scorecard.model_answers,
+      per_question: scorecard.per_question,
       xp_awarded: xpAwarded,
       stars,
     })

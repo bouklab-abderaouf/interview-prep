@@ -52,6 +52,7 @@ export function buildScoringPrompt({
     "Every strength's quote_from_answer must be copied verbatim from the candidate's transcript lines below — do not paraphrase or invent a quote.",
     "Model answers must use facts from the candidate's own CV (skills and projects listed below), not invented experience.",
     "You are given deterministic metrics (pace, filler rate, talk ratio, pause length) already computed — comment on them, do not recompute them.",
+    "per_question: one entry per substantive question the interviewer actually asked (skip greetings, logistics and small talk), in the order asked. question = the question as asked, shortened to one line. bank_index = the number of the matching entry in the numbered stage question bank below, or -1 if it wasn't from the bank. score = 0-100 for the candidate's answer to that question alone. verdict = one specific sentence on what made that answer strong or weak.",
   ];
 
   if (drill && targetQuestion) {
@@ -66,7 +67,8 @@ export function buildScoringPrompt({
   lines.push(
     "",
     `Stage focus areas: ${focusAreas.join(", ")}`,
-    `Stage question bank: ${questionBank.join(" | ")}`,
+    "Stage question bank (numbered from 0):",
+    ...questionBank.map((q, i) => `${i}. ${q}`),
     `Known gaps between this candidate's CV and the target role: ${gaps.map((g) => `[${g.severity}] ${g.requirement}`).join(" | ")}`,
     `Candidate's CV skills: ${candidate.top_skills.join(", ")}`,
     `Candidate's CV projects: ${candidate.notable_projects.map((p) => `${p.title} (${p.technologies.join(", ")}): ${p.summary}`).join(" | ")}`,

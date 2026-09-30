@@ -69,5 +69,16 @@ export async function scoreSession(params: {
   const fullTranscript = params.turns.map((t) => t.transcript).join("\n");
   const strengths = parsed.strengths.filter((s) => fullTranscript.includes(s.quote_from_answer));
 
-  return { ...parsed, strengths };
+  // bank_index drives a "drill this question" link, so an out-of-range index
+  // must not survive; scores are clamped for the same reason overall is.
+  const per_question = parsed.per_question.map((q) => ({
+    ...q,
+    bank_index:
+      Number.isInteger(q.bank_index) && q.bank_index >= 0 && q.bank_index < params.questionBank.length
+        ? q.bank_index
+        : -1,
+    score: Math.max(0, Math.min(100, Math.round(q.score))),
+  }));
+
+  return { ...parsed, strengths, per_question };
 }

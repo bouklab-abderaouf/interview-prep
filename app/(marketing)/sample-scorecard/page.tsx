@@ -12,10 +12,12 @@ export default function SampleScorecardPage() {
         stars={sampleScorecard.stars}
         xpAwarded={sampleScorecard.xp_awarded}
         star={sampleScorecard.star}
+        relevance={sampleScorecard.relevance}
         communication={sampleScorecard.communication}
         strengths={sampleScorecard.strengths}
         improvements={sampleScorecard.improvements}
         modelAnswers={sampleScorecard.model_answers}
+        perQuestion={sampleScorecard.per_question}
         turns={sampleScorecard.turns}
       />
     </main>
