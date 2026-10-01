@@ -105,7 +105,7 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **Client Scopes**:
   - `lib/supabase/server.ts`: User-scoped client (respects RLS) for Server Components and Route Handlers.
   - `lib/supabase/client.ts`: Browser client.
-  - `lib/supabase/admin.ts`: Service-role client (bypasses RLS); strictly restricted to anonymous demo sessions, `usage_counters` (which has no RLS policies by design), and `auth.admin.deleteUser` in `DELETE /api/account` (the user id always comes from verified claims, never the request).
+  - `lib/supabase/admin.ts`: Service-role client (bypasses RLS); strictly restricted to anonymous demo sessions, `usage_counters` (which has no RLS policies by design), `auth.admin.deleteUser` in `DELETE /api/account`, and `release_user_quota` refunds in `lib/limits.ts` (in both, the user id always comes from verified claims, never the request).
 - **Required Policies & Triggers**:
   - Migration `005_write_policies.sql`: Grants INSERT policies on `stages` and `scorecards` for authenticated users owning the parent roadmap/session.
   - Migration `006_profiles_autocreate.sql`: Uses a `SECURITY DEFINER` trigger on `auth.users` (`handle_new_user()`) to automatically create `profiles` rows upon signup.
@@ -136,6 +136,12 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **Theme** (`lib/theme.ts`): the choice is a `theme` cookie read by the root layout, which renders `class="light|dark"` on `<html>`; no class means follow the system. The `dark` variant in `app/globals.css` encodes that, so plain `dark:` utilities just work. Don't add an inline theme script or localStorage theme state.
 - **Grey text needs a dark pair**: `text-zinc-500` alone is 4.1:1 on the dark background (fails WCAG AA). Write `text-zinc-500 dark:text-zinc-400`. The axe scans in `e2e/` fail the run on serious contrast violations.
 - **Session state comes from what happened, not `sessions.status`** (`lib/interviews.ts`): a row is created when the interview room opens, so "active" with no turns and older than 30 minutes is "not started", not in progress.
+
+### J. Quota & Abuse Guards (production readiness phase 1)
+- **Every route that can spend Gemini quota** (`/api/analyze`, `/api/sessions/[id]/score`, `/api/live/token` in `full` mode) and `POST /api/sessions`: authenticate first, then call `consumeDailyQuota(supabase, kind)` (`lib/limits.ts`) with the **user's** client right before the spend, and return `quotaRefusal()` if refused. It fails closed. Refund with `releaseDailyQuota(userId, kind)` only when the failure isn't the user's doing (Gemini 503/429, a failed mint, our own DB errors) — never when the model rejects the input, or a crafted file gets free retries. A new Gemini-spending route needs the same, a new `kind` in migration 008's check constraint, and a test in `app/api/quota-routes.test.ts`.
+- **`full`-mode Live tokens always need a signed-in user**, checked before the API-key check. The stage-less smoke test is off in production unless `ENABLE_VOICE_SMOKE_TEST=1`.
+- **CSP** (`lib/security/csp.ts`, sent per request from `proxy.ts`): scripts run by nonce + `'strict-dynamic'` — never add `'unsafe-inline'`/`'unsafe-eval'` to `script-src` in production. A new external origin the browser talks to (an API, a tracker, a CDN) must be added to the policy **and** to `e2e/security.spec.ts`, or it will be blocked for real users. `CSP_REPORT_ONLY=1` is the escape hatch.
+- **Input caps** live in the route that reads the input (CV 4 MB and `%PDF-` signature, JD 20k chars, turn flushes 500 × 20k chars). Keep the CV cap under Vercel's ~4.5 MB body limit.
 
 ---
 

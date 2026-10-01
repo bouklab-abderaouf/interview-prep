@@ -13,7 +13,7 @@ keeps this file up to date as it goes.
 
 | # | Phase | Status | Needs from you | Gemini quota |
 |---|---|---|---|---|
-| 1 | [Close the abuse holes](#phase-1--close-the-abuse-holes) | Not started | One decision; 1 live session to verify | ~1 Live session |
+| 1 | [Close the abuse holes](#phase-1--close-the-abuse-holes) | **Code done** — your live check left | 1 live session to verify the CSP | ~1 Live session |
 | 2 | [Voice scope and edge cases](#phase-2--voice-scope-and-edge-cases) | Not started | Run the red-team script | ~5 Live sessions, 1–2 analyses |
 | 3 | [Monitoring and alerting](#phase-3--monitoring-and-alerting) | Not started | Create Sentry and uptime accounts | ~1 Live session |
 | 4 | [Billing and capacity](#phase-4--billing-and-capacity) | Not started | Read quota numbers; billing decision | None |
@@ -30,7 +30,10 @@ paid tier); 1–5 before 7. Phases 2 and 3 can swap.
   speculatively.** Tasks marked **[you]** need the user; tasks marked
   **[quota]** spend Live or text requests. Stop and ask before either.
 - **Decision** items are the user's call. Present the options with a
-  recommendation, then wait.
+  recommendation, then wait. *(On 2026-10-01 the user asked for every phase
+  to be worked through without stopping: decisions with a safe, reversible
+  recommendation took it and are marked "recommended default"; decisions
+  about money, legal identity or accounts stay open for the user.)*
 - One commit per task or tight group of tasks. Before each commit, run
   `npm run check`; before finishing a phase, run `npm run test:e2e`.
 - Every change in behaviour gets a test in the layer that fits
@@ -65,51 +68,71 @@ and it already has Turnstile, per-IP and global caps.
   by design, and the leaked-password check doesn't apply to magic links.
 
 **Tasks**
-- [ ] **Decision:** what to do with the token-only smoke test (`full`
-  without `stageId`). Recommended: require sign-in **and** disable it in
-  production unless `ENABLE_VOICE_SMOKE_TEST=1`. Alternative: delete it and
-  the no-`stageId` branch of `/session/[id]`.
-- [ ] Implement the decision. Check auth **before** anything that could
+- [x] **Decision:** what to do with the token-only smoke test (`full`
+  without `stageId`). *Took the recommended default (reversible):* require
+  sign-in **and** disable it in production unless `ENABLE_VOICE_SMOKE_TEST=1`.
+- [x] Implement the decision. Check auth **before** anything that could
   mint, including before the `GEMINI_API_KEY` check, so a misconfigured
-  server still answers 401 to anonymous callers.
-- [ ] Per-user daily limits. Migration `008_user_daily_usage.sql`: a table
+  server still answers 401 to anonymous callers. (fc4adb2)
+- [x] Per-user daily limits. Migration `008_user_daily_usage.sql`: a table
   `(user_id, day, kind, count)` referencing `auth.users on delete cascade`
   (AGENTS.md §3.H), plus a `security definer` function
   `consume_user_quota(kind, max)` that increments atomically and returns
   whether the call is allowed, so no service-role client is needed in user
   flows. Proposed limits, to be tuned in Phase 4: analyses 3/day, scorings
-  15/day, full-session tokens 10/day, drill tokens 20/day.
-- [ ] Enforce the limits in `/api/analyze`, `/api/sessions/[id]/score` and
+  15/day, full-session tokens 10/day, drill tokens 20/day. (fc4adb2 —
+  applied to the project and verified there in a rolled-back transaction;
+  `release_user_quota`, service role only, gives a unit back on Gemini
+  503/429 and on our own failures, never on a rejected input.)
+- [x] Enforce the limits in `/api/analyze`, `/api/sessions/[id]/score` and
   `/api/live/token` (full mode), and in `POST /api/sessions` so rows can't
   be spammed. Return a `429` with a clear reason, and show it in the UI
-  (onboarding form, score button, interview room).
-- [ ] Make sure `DELETE /api/account` still removes everything. It should
-  happen through the cascade; add a test.
-- [ ] Upgrade `next` and `eslint-config-next` to the patched 16.3.x;
-  `npm audit --omit=dev` clean.
-- [ ] Security headers in `next.config.ts`: CSP (allow self, the Supabase
-  URL, `wss://generativelanguage.googleapis.com`, `challenges.cloudflare.com`
+  (onboarding form, score button, interview room). (fc4adb2)
+- [x] Make sure `DELETE /api/account` still removes everything. It should
+  happen through the cascade; add a test. (fc4adb2 —
+  `tests/migrations.test.ts` fails if any table can't be reached from
+  `auth.users` by cascade, or lacks RLS.)
+- [x] Upgrade `next` and `eslint-config-next` to the patched 16.3.x;
+  `npm audit --omit=dev` clean. (eb762fb — 16.3.8)
+- [x] Security headers: CSP (allow self, the Supabase URL,
+  `wss://generativelanguage.googleapis.com`, `challenges.cloudflare.com`
   for Turnstile, and what the AudioWorklet and Three.js need),
   `frame-ancestors 'none'`, `Referrer-Policy:
   strict-origin-when-cross-origin`, `Permissions-Policy: microphone=(self),
-  camera=(self)`, HSTS. Start with `Content-Security-Policy-Report-Only` if
-  unsure.
-- [ ] Check server-side input limits: CV upload type and size, JD length,
+  camera=(self)`, HSTS. (4cbdda9 — the CSP is enforced, nonce +
+  `'strict-dynamic'`, built per request in `proxy.ts` because a nonce can't
+  live in `next.config.ts`; the static headers are in `next.config.ts`.
+  `CSP_REPORT_ONLY=1` is the escape hatch.)
+- [x] Check server-side input limits: CV upload type and size, JD length,
   the turns array size on `PATCH /api/sessions/[id]`. Add limits where
-  missing.
-- [ ] Optional: Turnstile (Supabase Auth captcha) on the sign-in form
-  against email bombing.
-- [ ] Tests: route tests for 401 / 429 / allowed on every quota route, with
+  missing. (fc4adb2 — `%PDF-` signature check, CV cap lowered to 4 MB to
+  fit Vercel's ~4.5 MB body limit, oversized bodies refused before parsing,
+  turn flushes capped at 500 turns × 20k characters.)
+- [x] Optional: Turnstile (Supabase Auth captcha) on the sign-in form
+  against email bombing. (5a56ec9 — off until `NEXT_PUBLIC_SIGNIN_CAPTCHA=1`.)
+  - [ ] **[you]** To turn it on: Supabase → Authentication → Bot protection
+    → Turnstile with your secret key, and set `NEXT_PUBLIC_SIGNIN_CAPTCHA=1`
+    at the same time (either one alone breaks sign-in).
+- [x] Tests: route tests for 401 / 429 / allowed on every quota route, with
   Gemini mocked; e2e checks that the headers are present; a unit test for
-  limit accounting.
+  limit accounting. (fc4adb2, 4cbdda9, 5a56ec9 — 8 of the 9 token tests
+  fail against the old route; e2e proves the CSP lets through the mic
+  worklet, the Live socket and Turnstile and blocks other origins.)
 - [ ] **[you] [quota]** One full live interview to confirm the CSP doesn't
-  break the Live socket, audio, the avatar or the camera.
+  break the Live socket, audio, the avatar or the camera. Restart
+  `npm run dev` first (Next.js was upgraded underneath it). If anything
+  breaks, set `CSP_REPORT_ONLY=1`, reproduce, and the console names what
+  the policy would have blocked.
 
 **Done when:** no route reaches Gemini without either (signed in + under
 limit) or (demo + Turnstile + caps); the audit is clean; headers are
 asserted in e2e; one live interview works under the CSP.
 
-**Outcome:** —
+**Outcome (2026-10-01):** every code task is done and tested. Anonymous
+callers can't mint Live tokens; every quota-spending route is capped per
+user per day and fails closed; Next.js is patched; a nonce-based CSP and
+the standard security headers are enforced. Waiting on you: the live
+interview check, and (optionally) the sign-in bot check.
 
 ---
 
