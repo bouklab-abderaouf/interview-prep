@@ -90,7 +90,9 @@ test("an unscored interview is scored from Interviews, then deleted", async ({ p
   await page.getByRole("button", { name: /Delete interview/ }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
   await expect.poll(() => countRows("sessions", user.id)).toBe(0);
-  await expect(page.getByText("No interviews here yet.")).toBeVisible();
+  // The list empties at once; the server refresh then swaps in the page's
+  // own empty state. Either is right.
+  await expect(page.getByText(/^No interviews (here )?yet\.?$/)).toBeVisible();
 });
 
 test("sessions that never started are cleared in one go", async ({ page }) => {
