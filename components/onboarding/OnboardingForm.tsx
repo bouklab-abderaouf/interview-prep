@@ -106,7 +106,7 @@ export function OnboardingForm() {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-4 p-16 text-center">
         <p className="text-lg font-medium">{SUBSTEPS[substepIndex]}...</p>
-        <p className="text-sm text-zinc-500">This takes 10–25 seconds.</p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">This takes 10–25 seconds.</p>
       </main>
     );
   }
@@ -161,7 +161,7 @@ export function OnboardingForm() {
               {cvFile.name} ({(cvFile.size / 1024 / 1024).toFixed(1)} MB)
             </p>
           ) : (
-            <p className="text-zinc-500">Drag &amp; drop your CV (PDF, max 5 MB), or click to browse</p>
+            <p className="text-zinc-500 dark:text-zinc-400">Drag &amp; drop your CV (PDF, max 5 MB), or click to browse</p>
           )}
         </div>
 
@@ -173,7 +173,7 @@ export function OnboardingForm() {
             rows={10}
             className="rounded border border-zinc-400 p-3"
           />
-          <span className="self-end text-xs text-zinc-500">
+          <span className="self-end text-xs text-zinc-500 dark:text-zinc-400">
             {jdText.length} / {JD_MAX_CHARS}
           </span>
         </div>

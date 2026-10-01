@@ -16,7 +16,7 @@ export function XpBar({ totalXp, streakDays }: XpBarProps) {
   return (
     <div className="flex items-center gap-5">
       <div className="flex-1">
-        <div className="mb-1 flex items-baseline justify-between text-xs text-zinc-500">
+        <div className="mb-1 flex items-baseline justify-between text-xs text-zinc-500 dark:text-zinc-400">
           <span>Level {level}</span>
           <span className="tabular-nums">
             {intoLevel} / {XP_PER_LEVEL} XP
@@ -40,7 +40,7 @@ export function XpBar({ totalXp, streakDays }: XpBarProps) {
       <div className="flex items-center gap-1.5 text-sm">
         <span aria-hidden>🔥</span>
         <span className="font-medium tabular-nums">{streakDays}</span>
-        <span className="text-zinc-500">day{streakDays === 1 ? "" : "s"}</span>
+        <span className="text-zinc-500 dark:text-zinc-400">day{streakDays === 1 ? "" : "s"}</span>
       </div>
     </div>
   );

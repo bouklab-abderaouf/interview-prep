@@ -89,7 +89,7 @@ export function InterviewRoom({
               {stageTitle}
               {company ? ` · ${company}` : targetRole ? ` · ${targetRole}` : ""}
             </h1>
-            <span className="text-[11px] text-zinc-500">Session {sessionId.slice(0, 8)}</span>
+            <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Session {sessionId.slice(0, 8)}</span>
           </div>
         </div>
 
@@ -118,7 +118,7 @@ export function InterviewRoom({
             {lastTtfa !== null && lastTtfa !== undefined ? `${Math.round(lastTtfa)}ms` : "—"}
           </span>
           {medianTtfa !== null && medianTtfa !== undefined && (
-            <span className="hidden text-[10px] text-zinc-500 md:inline">
+            <span className="hidden text-[10px] text-zinc-500 dark:text-zinc-400 md:inline">
               (med {Math.round(medianTtfa)}ms)
             </span>
           )}
@@ -193,7 +193,7 @@ export function InterviewRoom({
 
             <div className="absolute top-4 right-4 z-10 flex items-center gap-2 rounded-xl bg-black/60 px-2.5 py-1 text-[11px] text-zinc-300 backdrop-blur-md">
               <span className="capitalize">{interviewerTone}</span>
-              <span className="text-zinc-500">·</span>
+              <span className="text-zinc-500 dark:text-zinc-400">·</span>
               <span>Strictness {strictness}/5</span>
             </div>
 
@@ -243,7 +243,7 @@ export function InterviewRoom({
               <button
                 type="button"
                 onClick={() => setShowCaptions(false)}
-                className="text-xs text-zinc-500 hover:text-zinc-300"
+                className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-300"
               >
                 Hide
               </button>
@@ -323,7 +323,7 @@ export function InterviewRoom({
         </div>
 
         {/* Right: Stage prompt summary */}
-        <div className="hidden items-center gap-2 text-xs text-zinc-500 sm:flex">
+        <div className="hidden items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 sm:flex">
           <span>Sub-second voice dialog · Barge-in active</span>
         </div>
       </footer>

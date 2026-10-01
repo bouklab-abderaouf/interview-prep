@@ -72,7 +72,7 @@ export default async function DocumentsPage() {
 
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Documents</h1>
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
           Everything you&rsquo;ve uploaded. Each roadmap was built from one CV and one job
           description.
         </p>
@@ -93,7 +93,7 @@ export default async function DocumentsPage() {
                         ? `CV — ${roadmap.target_role}${roadmap.company ? ` at ${roadmap.company}` : ""}`
                         : "CV"}
                     </span>
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
                       Uploaded <LocalTime iso={doc.created_at} />
                       {/* Failed analyses upload the file before they fail, so
                           an unlinked document is a leftover, not a mystery. */}
@@ -130,7 +130,7 @@ export default async function DocumentsPage() {
             })}
           </ul>
         ) : (
-          <p className="text-sm text-zinc-500">No CV uploaded yet.</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">No CV uploaded yet.</p>
         )}
       </section>
 
@@ -154,7 +154,7 @@ export default async function DocumentsPage() {
                           ? `${roadmap.target_role}${roadmap.company ? ` at ${roadmap.company}` : ""}`
                           : "Job description"}
                       </span>
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
                         Pasted <LocalTime iso={doc.created_at} /> &middot; {text.length} characters
                         {!roadmap && " · analysis didn't finish"}
                       </span>
@@ -182,7 +182,7 @@ export default async function DocumentsPage() {
                         <span className="group-open:hidden">
                           {text.slice(0, JD_PREVIEW_CHARS).trimEnd()}&hellip;
                         </span>
-                        <span className="mt-1 block text-zinc-500 underline">
+                        <span className="mt-1 block text-zinc-500 dark:text-zinc-400 underline">
                           <span className="group-open:hidden">Show full text</span>
                           <span className="hidden group-open:inline">Hide</span>
                         </span>
@@ -199,7 +199,7 @@ export default async function DocumentsPage() {
             })}
           </ul>
         ) : (
-          <p className="text-sm text-zinc-500">No job description saved yet.</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">No job description saved yet.</p>
         )}
       </section>
 

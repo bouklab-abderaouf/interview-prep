@@ -27,12 +27,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         <AppNav />
 
         <div className="ml-auto flex items-center gap-4">
-          <span className="hidden text-sm text-zinc-500 sm:inline">{data.claims.email}</span>
+          <span className="hidden text-sm text-zinc-500 dark:text-zinc-400 sm:inline">{data.claims.email}</span>
           <ThemeToggle initial={await getThemePreference()} />
           <form action="/auth/sign-out" method="post">
             <button
               type="submit"
-              className="text-sm text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-100"
+              className="text-sm text-zinc-500 dark:text-zinc-400 transition-colors hover:text-zinc-900 dark:hover:text-zinc-100"
             >
               Sign out
             </button>

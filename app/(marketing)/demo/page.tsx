@@ -378,7 +378,7 @@ export default function DemoPage() {
             <FactCard title="Interviewing for" facts={ROLE_FACTS} />
           </div>
 
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Answer as Alex, or as yourself — the interviewer will press on the gaps either way.
             You&apos;ll get a delivery snapshot at the end.
           </p>
@@ -557,7 +557,7 @@ function DemoSnapshot({ turns, language }: { turns: Turn[]; language: InterviewL
           {rows.map(({ label, value, assessment }) => (
             <li key={label} className="flex flex-col gap-1.5 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
               <div className="flex items-start justify-between gap-2">
-                <span className="text-sm text-zinc-500">{label}</span>
+                <span className="text-sm text-zinc-500 dark:text-zinc-400">{label}</span>
                 <StatusBadge status={assessment.status} />
               </div>
               <span className="text-lg font-semibold">{value}</span>

@@ -86,7 +86,7 @@ export default async function ScorecardPage({
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">{stage?.title ?? "Scorecard"}</h1>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             <LocalTime iso={session?.started_at ?? null} /> &middot;{" "}
             {formatDuration(session?.duration_seconds ?? null)}
           </p>

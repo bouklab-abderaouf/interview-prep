@@ -167,10 +167,10 @@ export function ScorecardView({
                   </span>
                 ))}
               </div>
-              <span className="text-xs text-zinc-500">{STAR_THRESHOLDS}</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">{STAR_THRESHOLDS}</span>
             </div>
             <p className="font-medium">{verdictFor(overall)}</p>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
               +{xpAwarded} XP
               {stats.answers > 0 &&
                 ` · ${stats.answers} answer${stats.answers === 1 ? "" : "s"}, ~${stats.avgWords} words ${stats.answers === 1 ? "long" : "each"}`}
@@ -250,7 +250,7 @@ export function ScorecardView({
           {shownDelivery.map(({ label, value, assessment }) => (
             <li key={label} className="flex flex-col gap-1.5 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
               <div className="flex items-start justify-between gap-2">
-                <span className="text-sm text-zinc-500">{label}</span>
+                <span className="text-sm text-zinc-500 dark:text-zinc-400">{label}</span>
                 <StatusBadge status={assessment.status} />
               </div>
               <span className="text-lg font-semibold">{value}</span>
@@ -259,7 +259,7 @@ export function ScorecardView({
           ))}
           {reliableTiming && stats.longestAnswerSeconds !== null && (
             <li className="flex flex-col gap-1.5 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
-              <span className="text-sm text-zinc-500">Longest answer</span>
+              <span className="text-sm text-zinc-500 dark:text-zinc-400">Longest answer</span>
               <span className="text-lg font-semibold">{formatClock(stats.longestAnswerSeconds * 1000)}</span>
               <span className="text-sm text-zinc-600 dark:text-zinc-400">
                 Most strong answers land in 1–2 minutes.
@@ -281,7 +281,7 @@ export function ScorecardView({
                   </span>
                   {s.point}
                 </p>
-                <p className="mt-1 text-sm italic text-zinc-500">&ldquo;{s.quote_from_answer}&rdquo;</p>
+                <p className="mt-1 text-sm italic text-zinc-500 dark:text-zinc-400">&ldquo;{s.quote_from_answer}&rdquo;</p>
               </li>
             ))}
           </ul>
@@ -296,7 +296,7 @@ export function ScorecardView({
               <p className="font-medium">{imp.point}</p>
               <p className="text-sm text-zinc-600 dark:text-zinc-400">{imp.why_it_matters}</p>
               <p className="rounded-md bg-zinc-100 p-2.5 text-sm dark:bg-zinc-900">
-                <span className="mb-0.5 block text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                <span className="mb-0.5 block text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
                   Try saying
                 </span>
                 {imp.what_to_say_instead}
@@ -335,7 +335,7 @@ export function ScorecardView({
                 : null;
             return (
               <li key={i} className={`flex flex-col gap-1 ${isCandidate ? "items-end" : "items-start"}`}>
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
                   {isCandidate ? "You" : interviewerName}
                   {reliableTiming && t.start_ms !== undefined && ` · ${formatClock(t.start_ms)}`}
                   {isCandidate && ` · ${words} words`}
@@ -363,7 +363,7 @@ function SectionTitle({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="mb-3 flex flex-col gap-0.5">
       <h2 className="text-lg font-medium">{title}</h2>
-      {hint && <p className="text-sm text-zinc-500">{hint}</p>}
+      {hint && <p className="text-sm text-zinc-500 dark:text-zinc-400">{hint}</p>}
     </div>
   );
 }
@@ -394,7 +394,7 @@ function PassMeter({ overall, progress }: { overall: number; progress: StageProg
           </span>
           {headline}
         </p>
-        <span className="text-sm text-zinc-500">Pass mark {passScore}</span>
+        <span className="text-sm text-zinc-500 dark:text-zinc-400">Pass mark {passScore}</span>
       </div>
 
       <div className="relative h-2.5 rounded bg-zinc-200 dark:bg-zinc-800" title={`${overall} / pass mark ${passScore}`}>
@@ -409,7 +409,7 @@ function PassMeter({ overall, progress }: { overall: number; progress: StageProg
         />
       </div>
 
-      <p className="text-sm text-zinc-500">
+      <p className="text-sm text-zinc-500 dark:text-zinc-400">
         Attempt {attempt}
         {last !== null && (
           <>

@@ -6,7 +6,15 @@ import { sampleScorecard } from "@/lib/fixtures/sample-scorecard";
 // fixture for now.
 export default function SampleScorecardPage() {
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col p-8">
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 p-8">
+      {/* Every page needs a level-1 heading; this one had none until the
+          accessibility checks in e2e/ flagged it. */}
+      <header className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Sample scorecard</h1>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          What you get after every interview. This one is an example, not a real candidate.
+        </p>
+      </header>
       <ScorecardView
         overall={sampleScorecard.overall}
         stars={sampleScorecard.stars}

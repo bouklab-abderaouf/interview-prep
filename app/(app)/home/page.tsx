@@ -144,8 +144,8 @@ export default async function HomePage() {
                   className="flex items-center justify-between gap-4 rounded-lg border border-dashed border-zinc-300 p-4 dark:border-zinc-700"
                 >
                   <div className="flex flex-col gap-1">
-                    <span className="text-zinc-500">{title}</span>
-                    <span className="text-sm text-zinc-500">
+                    <span className="text-zinc-500 dark:text-zinc-400">{title}</span>
+                    <span className="text-sm text-zinc-500 dark:text-zinc-400">
                       Analysis didn&rsquo;t finish &mdash; no stages were built. Created{" "}
                       {formatDate(roadmap.created_at)}.
                     </span>
@@ -168,7 +168,7 @@ export default async function HomePage() {
                 <div className="flex items-center justify-between gap-4 rounded-lg border border-zinc-200 p-4 transition-colors hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600">
                   <Link href={`/roadmap/${roadmap.id}`} className="flex flex-1 flex-col gap-1">
                     {title}
-                    <span className="text-sm text-zinc-500">
+                    <span className="text-sm text-zinc-500 dark:text-zinc-400">
                       {attempted} of {roadmapStages.length} stages attempted &middot; {unlocked}{" "}
                       unlocked &middot; created {formatDate(roadmap.created_at)}
                     </span>

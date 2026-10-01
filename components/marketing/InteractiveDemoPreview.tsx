@@ -25,7 +25,7 @@ export function InteractiveDemoPreview() {
             <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
           </div>
-          <span className="ml-2 text-xs font-medium text-zinc-500">Live Preview</span>
+          <span className="ml-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">Live Preview</span>
         </div>
 
         <div className="flex rounded-lg bg-zinc-200/60 p-0.5 dark:bg-zinc-800">
@@ -72,7 +72,7 @@ export function InteractiveDemoPreview() {
                     AI
                   </span>
                 </p>
-                <p className="text-xs text-zinc-500">Lead Tech Recruiter · Strictness: 3/5</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Lead Tech Recruiter · Strictness: 3/5</p>
               </div>
             </div>
 
@@ -119,7 +119,7 @@ export function InteractiveDemoPreview() {
           {/* Scorecard Hero Stats */}
           <div className="flex items-center justify-between rounded-lg border border-zinc-200/80 bg-white/70 p-4 dark:border-zinc-800/80 dark:bg-zinc-900/70">
             <div>
-              <span className="text-xs text-zinc-500 uppercase tracking-wider">Overall Score</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Overall Score</span>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-bold">85</span>
                 <span className="text-sm text-zinc-400">/100</span>
@@ -130,7 +130,7 @@ export function InteractiveDemoPreview() {
               <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
                 +132 XP Earned
               </span>
-              <p className="mt-1 text-xs text-zinc-500">Passed Stage Threshold (60)</p>
+              <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Passed Stage Threshold (60)</p>
             </div>
           </div>
 
@@ -146,7 +146,7 @@ export function InteractiveDemoPreview() {
                 key={star.label}
                 className="rounded-lg border border-zinc-200/60 bg-white/50 p-2.5 text-center dark:border-zinc-800/60 dark:bg-zinc-900/50"
               >
-                <div className="text-[11px] text-zinc-500">{star.label}</div>
+                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">{star.label}</div>
                 <div className="text-base font-semibold">{star.val}</div>
               </div>
             ))}

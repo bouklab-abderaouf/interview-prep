@@ -26,7 +26,7 @@ export default function LandingPage() {
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
           Practice the interview out loud, before it counts.
         </h1>
-        <p className="text-sm text-zinc-500 max-w-lg">
+        <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-lg">
           Live AI interviews powered by Gemini Live API with sub-second interruption,
           tailored specifically to your CV and target role.
         </p>
@@ -62,7 +62,7 @@ export default function LandingPage() {
               {index + 1}
             </div>
             <h2 className="font-medium">{step.title}</h2>
-            <p className="text-sm text-zinc-500">{step.body}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{step.body}</p>
           </div>
         ))}
       </section>
@@ -71,7 +71,7 @@ export default function LandingPage() {
         href="https://github.com/bouklab-abderaouf/interview-prep"
         target="_blank"
         rel="noopener noreferrer"
-        className="text-sm underline text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+        className="text-sm underline text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-300"
       >
         View on GitHub &rarr;
       </a>
