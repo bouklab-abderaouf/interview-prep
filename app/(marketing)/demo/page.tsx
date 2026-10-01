@@ -24,6 +24,7 @@ import { AudioVisualizer } from "@/components/interview/AudioVisualizer";
 import { TranscriptFeed, type TranscriptEntry } from "@/components/interview/TranscriptFeed";
 import { StatusBadge } from "@/components/scorecard/StatusBadge";
 import { TurnstileWidget } from "@/components/ui/TurnstileWidget";
+import { classifyLiveClose, describeLiveClose } from "@/lib/live/close-reason";
 import { reportEvent } from "@/lib/monitoring/events";
 
 // Phase 1 §5.2 — no-auth 2-minute demo: fixture CV/JD, Turnstile, countdown.
@@ -202,9 +203,16 @@ export default function DemoPage() {
           },
           onClose: (info) => {
             if (endedRef.current) return;
-            if (info.code !== 1000) reportEvent("live.closed_abnormally", { mode: "demo", code: info.code });
-            if (info.code === 1011) {
-              setErrorMessage("The demo's voice service hit its usage limit. Try again later, or see a sample scorecard.");
+            const kind = classifyLiveClose(info.code, info.reason);
+            if (kind !== "normal") reportEvent("live.closed_abnormally", { mode: "demo", code: info.code, kind });
+            // Only the service's own limits get an error screen; any other
+            // drop ends the demo on its snapshot, as before.
+            if (kind === "quota" || kind === "busy") {
+              setErrorMessage(
+                kind === "quota"
+                  ? "The demo's voice service hit its usage limit. Try again later, or see a sample scorecard."
+                  : describeLiveClose(info.code, info.reason),
+              );
               setStage("error");
             }
             endDemo();

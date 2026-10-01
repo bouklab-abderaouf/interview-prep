@@ -11,8 +11,10 @@ import { connectLiveSession, sendAudioChunk, startInterviewerTurn } from "@/lib/
 import type { TokenResponseBody } from "@/lib/live/types";
 import { TurnTimeline } from "@/lib/live/turn-timeline";
 import { describeLimitRefusal } from "@/lib/limit-messages";
+import { classifyLiveClose, describeLiveClose } from "@/lib/live/close-reason";
 import { createClient } from "@/lib/supabase/client";
 import { InterviewRoom } from "@/components/interview/InterviewRoom";
+import { describeScoringFailure } from "@/components/interview/ScoreSessionButton";
 import { reportEvent } from "@/lib/monitoring/events";
 
 // Phase 0 §4 walking-skeleton harness, extended in Phase 3 (§7.1) into the
@@ -299,8 +301,13 @@ export default function SessionPage({
       try {
         const res = await fetch(`/api/sessions/${sessionId}/score`, { method: "POST" });
         if (!res.ok) {
-          const refusal = describeLimitRefusal(await res.json().catch(() => null));
-          throw new Error(refusal ? `Your interview was saved, but it can't be scored yet. ${refusal}` : `score endpoint returned ${res.status}`);
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          const refusal = describeLimitRefusal(body);
+          throw new Error(
+            refusal
+              ? `Your interview was saved, but it can't be scored yet. ${refusal}`
+              : `Your interview was saved, but scoring didn't finish. ${describeScoringFailure(body?.error, res.status)}`,
+          );
         }
         router.push(`/scorecard/${sessionId}`);
         return;
@@ -381,6 +388,28 @@ export default function SessionPage({
       const player = createAudioPlayer();
       playerRef.current = player;
 
+      // The socket died under us (quota, network, a server error). Release
+      // the mic and speakers, and keep what was said: the turns are saved
+      // as "errored" so the interview can still be scored from Interviews
+      // instead of losing everything since the last 60s flush.
+      const abandonAfterDrop = async (reason: string) => {
+        endingRef.current = true;
+        if (flushIntervalRef.current) clearInterval(flushIntervalRef.current);
+        flushIntervalRef.current = null;
+        const turns = timelineRef.current.finish(sinceStart());
+        recorderRef.current?.stop();
+        recorderRef.current = null;
+        micStreamRef.current?.getTracks().forEach((track) => track.stop());
+        micStreamRef.current = null;
+        playerRef.current?.close();
+        playerRef.current = null;
+        sessionRef.current = null;
+        const saved = isRealSession && turns.length > 0;
+        if (saved) await flushTurns("errored");
+        setErrorMessage(saved ? `${reason} Your answers so far are saved — you can score them from Interviews.` : reason);
+        setStatus("error");
+      };
+
       // connect() resolves when the socket opens, but input sent before the
       // server's setupComplete is rejected — the opening cue waits for both.
       let markSetupComplete!: () => void;
@@ -459,11 +488,9 @@ export default function SessionPage({
           // stop() lands on when it finishes.
           if (endingRef.current) return;
           if (!info.wasClean || info.code !== 1000) {
-            reportEvent("live.closed_abnormally", { mode: "full", code: info.code });
-            setErrorMessage(
-              `session closed: code ${info.code}${info.reason ? ` — ${info.reason}` : ""}`,
-            );
-            setStatus("error");
+            const kind = classifyLiveClose(info.code, info.reason);
+            reportEvent("live.closed_abnormally", { mode: "full", code: info.code, kind });
+            void abandonAfterDrop(describeLiveClose(info.code, info.reason) ?? "The connection closed.");
           } else {
             setStatus("idle");
           }

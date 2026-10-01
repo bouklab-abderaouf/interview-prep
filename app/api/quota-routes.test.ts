@@ -202,8 +202,18 @@ describe("POST /api/sessions/[id]/score", () => {
     fake = fakeSupabase({ respond: scoringDatabase(true) });
     mocks.scoreSession.mockRejectedValue(new ApiError({ message: "high demand", status: 503 }));
     const res = await score();
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "model_busy" });
     expect(mocks.adminCalls).toEqual([["release_user_quota", { p_user: "user-1", p_kind: "scoring" }]]);
+  });
+
+  it("says when the model's quota (not the user's) is gone, and gives the unit back", async () => {
+    fake = fakeSupabase({ respond: scoringDatabase(true) });
+    mocks.scoreSession.mockRejectedValue(new ApiError({ message: "quota", status: 429 }));
+    const res = await score();
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "quota_exceeded" });
+    expect(mocks.adminCalls).toHaveLength(1);
   });
 
   it("keeps the unit when the failure could have been caused by the input", async () => {

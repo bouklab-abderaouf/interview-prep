@@ -4,7 +4,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { todayKey } from "@/lib/guardrails/kill-switch";
 import { reportEvent } from "@/lib/monitoring/events";
 
-const DEMO_MAX_SESSIONS_PER_DAY = Number(process.env.DEMO_MAX_SESSIONS_PER_DAY ?? 200);
+// 20, not the original 200: that was never derived from the real Live quota,
+// and a demo visitor past the quota gets an interviewer that says nothing.
+// Raise it from docs/CAPACITY.md once the project's limits are known.
+const DEMO_MAX_SESSIONS_PER_DAY = Number(process.env.DEMO_MAX_SESSIONS_PER_DAY ?? 20);
 const DEMO_MAX_SESSIONS_PER_IP_PER_HOUR = Number(process.env.DEMO_MAX_SESSIONS_PER_IP_PER_HOUR ?? 2);
 
 // specs §3: sessions.ip_hash = sha256(ip + salt). IP_HASH_SALT isn't in the

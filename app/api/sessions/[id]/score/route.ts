@@ -128,6 +128,11 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
     // does — otherwise a crafted input could retry for free.
     if (error instanceof ApiError && (error.status === 503 || error.status === 429)) {
       await releaseDailyQuota(userId, "scoring");
+      // Different advice: overloaded = "a minute", out of quota = "later
+      // today or tomorrow". The interview is saved either way.
+      return error.status === 503
+        ? NextResponse.json({ error: "model_busy" }, { status: 503 })
+        : NextResponse.json({ error: "quota_exceeded" }, { status: 429 });
     }
     return NextResponse.json({ error: "scoring_failed" }, { status: 502 });
   }

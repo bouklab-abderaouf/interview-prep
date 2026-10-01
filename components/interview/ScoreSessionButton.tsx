@@ -29,12 +29,7 @@ export function ScoreSessionButton({ sessionId, label = "Score this interview", 
       const res = await fetch(`/api/sessions/${sessionId}/score`, { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        throw new Error(
-          describeLimitRefusal(body) ??
-            (body.error === "scoring_failed"
-              ? "The scoring model is busy right now. Your interview is saved — try again in a minute."
-              : (body.error ?? `scoring failed with ${res.status}`)),
-        );
+        throw new Error(describeLimitRefusal(body) ?? describeScoringFailure(body.error, res.status));
       }
       router.push(`/scorecard/${sessionId}`);
     } catch (error) {
@@ -60,4 +55,19 @@ export function ScoreSessionButton({ sessionId, label = "Score this interview", 
       )}
     </div>
   );
+}
+
+// The scoring route's failures, in words. The interview is saved in every
+// case, so each says when trying again makes sense.
+export function describeScoringFailure(error: string | undefined, status: number): string {
+  switch (error) {
+    case "model_busy":
+      return "The scoring model is overloaded right now. Your interview is saved — try again in a minute.";
+    case "quota_exceeded":
+      return "Today's scoring quota is used up. Your interview is saved — try again later today or tomorrow.";
+    case "scoring_failed":
+      return "Scoring failed. Your interview is saved — try again in a minute.";
+    default:
+      return error ?? `Scoring failed (error ${status}). Your interview is saved.`;
+  }
 }
