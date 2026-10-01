@@ -6,6 +6,7 @@ import { scoreSession } from "@/lib/gemini/score-session";
 import { GapAnalysis, StageQuestionSchema } from "@/lib/gemini/schemas";
 import { z } from "zod";
 import type { InterviewLanguage } from "@/lib/live/types";
+import { nextStreak, starsForScore, utcDay, xpForSession } from "@/lib/progression";
 
 // specs §7.3 — one Gemini text call: transcript + stage focus_areas/
 // question_bank + roadmap gaps + deterministic metrics in, Scorecard out.
@@ -116,14 +117,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
     return NextResponse.json({ error: "scoring_failed" }, { status: 502 });
   }
 
-  // specs §7.3 — xp = round(overall * 1.5) + duration_bonus. A 2-minute drill
-  // earns 15–40 XP plus its duration bonus instead, so it rewards focused
-  // practice without distorting level progression.
-  const durationBonus = Math.round((session.duration_seconds ?? 0) / 60);
-  const xpAwarded = isDrill
-    ? Math.max(15, Math.round(scorecard.overall * 0.4)) + durationBonus
-    : Math.round(scorecard.overall * 1.5) + durationBonus;
-  const stars = scorecard.overall >= 85 ? 3 : scorecard.overall >= 70 ? 2 : scorecard.overall >= 55 ? 1 : 0;
+  const xpAwarded = xpForSession({
+    overall: scorecard.overall,
+    durationSeconds: session.duration_seconds,
+    drill: isDrill,
+  });
+  const stars = starsForScore(scorecard.overall);
 
   const { data: scorecardRow, error: scorecardError } = await supabase
     .from("scorecards")
@@ -202,8 +201,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
       .from("profiles")
       .update({
         total_xp: profile.total_xp + xpAwarded,
-        streak_days: nextStreak(profile.streak_days, profile.last_active),
-        last_active: todayUtc(),
+        streak_days: nextStreak(profile.streak_days, profile.last_active, new Date()),
+        last_active: utcDay(new Date()),
       })
       .eq("id", userId);
     if (profileError) {
@@ -261,21 +260,4 @@ async function recordStageProgress(
         .eq("stage_id", nextStage.id);
     }
   }
-}
-
-function todayUtc(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-// Same UTC day: unchanged. Consecutive day: +1. Any longer gap (or a first
-// ever session): back to 1. specs §8.3 defers streak freezes, so a missed
-// day simply resets.
-function nextStreak(current: number, lastActive: string | null): number {
-  const today = todayUtc();
-  if (lastActive === today) return Math.max(current, 1);
-
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  if (lastActive === yesterday) return current + 1;
-
-  return 1;
 }
