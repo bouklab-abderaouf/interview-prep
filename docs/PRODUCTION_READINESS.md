@@ -15,7 +15,7 @@ keeps this file up to date as it goes.
 |---|---|---|---|---|
 | 1 | [Close the abuse holes](#phase-1--close-the-abuse-holes) | **Code done** — your live check left | 1 live session to verify the CSP | ~1 Live session |
 | 2 | [Voice scope and edge cases](#phase-2--voice-scope-and-edge-cases) | **Code done** — red-team run left | Run the red-team script | ~5 Live sessions, 1–2 analyses |
-| 3 | [Monitoring and alerting](#phase-3--monitoring-and-alerting) | Not started | Create Sentry and uptime accounts | ~1 Live session |
+| 3 | [Monitoring and alerting](#phase-3--monitoring-and-alerting) | **Code done** — accounts and alerts left | Create Sentry and uptime accounts | ~1 Live session |
 | 4 | [Billing and capacity](#phase-4--billing-and-capacity) | Not started | Read quota numbers; billing decision | None |
 | 5 | [GDPR / RGPD](#phase-5--gdpr--rgpd) | Not started | Legal identity, DPAs, legal review | None |
 | 6 | [Test depth, known bugs, private beta](#phase-6--test-depth-known-bugs-private-beta) | Not started | Docker; device testing; recruit 3–5 testers | ~5–10 Live sessions |
@@ -210,24 +210,38 @@ prompt tests are green.
 user tells you.
 
 **Tasks**
-- [ ] **Decision [you]:** error tracker. Recommended: Sentry, free tier,
-  **EU data region** (GDPR). Create the project and give the DSN as an env
-  var.
-- [ ] Integrate it on the client and server (Next.js SDK). **Scrub personal
+- [x] **Decision [you]:** error tracker. *Took the recommended default:*
+  Sentry, free tier, **EU data region** (GDPR). The code is in and inert
+  until a DSN is set.
+  - [ ] **[you]** Create the account and project and set the DSN. Steps in
+    [RUNBOOK.md](RUNBOOK.md#error-tracking-sentry).
+- [x] Integrate it on the client and server (Next.js SDK). **Scrub personal
   data**: never send CV text, transcripts, emails or audio. Add a
-  `beforeSend` filter and a test for it.
-- [ ] Capture the voice failure modes with tags: the 12s response watchdog,
+  `beforeSend` filter and a test for it. (91f2c89 — `lib/monitoring/scrub.ts`
+  is an allow-list: no user, extras, bodies, cookies, headers, query
+  strings or console breadcrumbs; emails, JWTs and auth codes redacted.
+  No tracing, no replay. 12 tests.)
+- [x] Capture the voice failure modes with tags: the 12s response watchdog,
   Live close `1011`, token mint failures, mic errors (as counts, not
   noise), scoring and analysis failures (503 vs 429), turn-flush failures.
-- [ ] Guardrail events as warnings with alerts: kill switch tripped, global
+  (91f2c89 — `lib/monitoring/events.ts`, in the interview room and the
+  demo.)
+- [x] Guardrail events as warnings with alerts: kill switch tripped, global
   demo cap reached, per-IP cap hits, per-user limit hits (from Phase 1),
   Turnstile failures. A spike in any of these is the abuse signal.
+  (91f2c89 — the alert rule for each is in RUNBOOK.md.)
+  - [ ] **[you]** Create those alert rules in Sentry once the project exists.
 - [ ] **[you]** Uptime check on `/api/demo/status` and `/` (UptimeRobot or
-  Better Stack free tier), alerting to email or phone.
-- [ ] Runbook in `docs/RUNBOOK.md`: how to flip the kill switch, rotate
+  Better Stack free tier), alerting to email or phone. Exact checks in
+  [RUNBOOK.md](RUNBOOK.md#uptime-checks).
+- [x] Runbook in `docs/RUNBOOK.md`: how to flip the kill switch, rotate
   `GEMINI_API_KEY`, read Supabase auth logs, and what each alert means.
-- [ ] Re-run the Supabase security advisors after Phase 1's migration; note
-  the date here.
+  (91f2c89 — it also covers the per-user limits as the "off switch" for
+  signed-in spending, which the kill switch doesn't cover.)
+- [x] Re-run the Supabase security advisors after Phase 1's migration; note
+  the date here. (2026-10-01: one new warning, on `consume_user_quota`
+  being a SECURITY DEFINER function users can call. It's intentional and
+  documented in RUNBOOK.md; nothing else new.)
 - [ ] **[you] [quota]** Force one failure end to end, e.g. an invalid model
   in a preview environment, and confirm it shows up in the dashboard.
 
@@ -235,7 +249,11 @@ user tells you.
 the dashboard within a minute with no personal data; the uptime and
 guardrail alerts reach you.
 
-**Outcome:** —
+**Outcome (2026-10-01):** the code side is done and tested: Sentry wiring
+(inert without a DSN), strict scrubbing, named events for every failure
+mode and abuse signal, the runbook. Waiting on you: the Sentry project and
+DSN, its alert rules, the uptime checks, and one forced failure to see it
+arrive.
 
 ---
 
