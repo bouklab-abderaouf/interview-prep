@@ -3,11 +3,17 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { LINK_ERRORS, type LinkError } from "@/components/auth/link-errors";
+import { TurnstileWidget } from "@/components/ui/TurnstileWidget";
 import { createClient } from "@/lib/supabase/client";
 
 // Supabase allows one magic-link email per address per 60s by default; a
 // resend inside that window just fails, so the button waits it out instead.
 const RESEND_COOLDOWN_S = 60;
+
+// Bot check against email bombing. Supabase verifies the token itself, but
+// only once "Bot protection" is enabled in its Auth settings — turn this on
+// together with that, or every sign-in fails (docs/RUNBOOK.md).
+const CAPTCHA_ENABLED = process.env.NEXT_PUBLIC_SIGNIN_CAPTCHA === "1";
 
 // Phase 2 — magic-link sign-in. Not in specs §1's original tree (auth wasn't
 // a dedicated phase there), but §6.1's "Auth check. Reject anonymous." needs
@@ -20,6 +26,11 @@ export function SignInForm({ linkError }: { linkError: LinkError | null }) {
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // Turnstile tokens are single-use: bumping this remounts the widget for a
+  // fresh one after every send.
+  const [captchaRound, setCaptchaRound] = useState(0);
+  const needsCaptcha = CAPTCHA_ENABLED && !captchaToken;
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -36,10 +47,15 @@ export function SignInForm({ linkError }: { linkError: LinkError | null }) {
       email,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/confirm`,
+        ...(CAPTCHA_ENABLED && captchaToken ? { captchaToken } : {}),
       },
     });
 
     setSending(false);
+    if (CAPTCHA_ENABLED) {
+      setCaptchaToken(null);
+      setCaptchaRound((round) => round + 1);
+    }
     if (error) {
       setErrorMessage(describeSendError(error));
       return;
@@ -77,11 +93,16 @@ export function SignInForm({ linkError }: { linkError: LinkError | null }) {
 
         <div className="flex w-full flex-col gap-2 border-t border-zinc-200 pt-5 text-sm dark:border-zinc-800">
           <p className="text-zinc-500 dark:text-zinc-400">Nothing yet? Check your spam folder, or</p>
+          {CAPTCHA_ENABLED && cooldown === 0 && (
+            <div className="flex justify-center">
+              <TurnstileWidget key={captchaRound} onToken={setCaptchaToken} />
+            </div>
+          )}
           <div className="flex items-center justify-center gap-4">
             <button
               type="button"
               onClick={() => void sendLink()}
-              disabled={cooldown > 0 || sending}
+              disabled={cooldown > 0 || sending || needsCaptcha}
               className="font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:text-zinc-400 disabled:no-underline dark:text-blue-400 dark:disabled:text-zinc-500"
             >
               {sending
@@ -138,9 +159,11 @@ export function SignInForm({ linkError }: { linkError: LinkError | null }) {
 
       {errorMessage && <ErrorNote>{errorMessage}</ErrorNote>}
 
+      {CAPTCHA_ENABLED && <TurnstileWidget key={captchaRound} onToken={setCaptchaToken} />}
+
       <button
         type="submit"
-        disabled={sending}
+        disabled={sending || needsCaptcha}
         className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-zinc-900 px-4 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
       >
         {sending ? (
@@ -165,6 +188,7 @@ export function SignInForm({ linkError }: { linkError: LinkError | null }) {
 
 function describeSendError(error: { status?: number; message: string }): string {
   if (error.status === 429) return "Too many sign-in emails. Wait a minute, then try again.";
+  if (/captcha/i.test(error.message)) return "The bot check didn't pass. Complete it again, then resend.";
   // "Failed to fetch": the browser never got Supabase's reply. The request
   // often did go through (seen in the auth logs: email sent, browser still
   // errored), and supabase-js has already dropped this attempt's verifier,

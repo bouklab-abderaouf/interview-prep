@@ -39,6 +39,11 @@ test.describe("signed-out access", () => {
 test.describe("API refuses anonymous callers", () => {
   const id = "5f0c6d2e-1b7a-4c3e-9a51-0d9a8b7c6e5f";
   const cases: Array<[method: string, path: string, body?: unknown]> = [
+    // Used to mint a Live token for anyone (no stageId = the old smoke test).
+    ["POST", "/api/live/token", { mode: "full" }],
+    ["POST", "/api/live/token", { mode: "full", stageId: id }],
+    ["POST", "/api/analyze", undefined],
+    ["POST", `/api/sessions/${id}/score`, undefined],
     ["POST", "/api/sessions", { stageId: id }],
     ["DELETE", "/api/sessions", { ids: [id] }],
     ["PATCH", `/api/sessions/${id}`, { turns: [] }],
@@ -49,7 +54,7 @@ test.describe("API refuses anonymous callers", () => {
   ];
 
   for (const [method, path, body] of cases) {
-    test(`${method} ${path} → 401`, async ({ request }) => {
+    test(`${method} ${path}${body ? ` ${JSON.stringify(body)}` : ""} → 401`, async ({ request }) => {
       const response = await request.fetch(path, { method, data: body });
       expect(response.status()).toBe(401);
     });

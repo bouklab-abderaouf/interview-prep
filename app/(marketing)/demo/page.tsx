@@ -23,6 +23,7 @@ import { Avatar3D } from "@/components/interview/Avatar3D";
 import { AudioVisualizer } from "@/components/interview/AudioVisualizer";
 import { TranscriptFeed, type TranscriptEntry } from "@/components/interview/TranscriptFeed";
 import { StatusBadge } from "@/components/scorecard/StatusBadge";
+import { TurnstileWidget } from "@/components/ui/TurnstileWidget";
 
 // Phase 1 §5.2 — no-auth 2-minute demo: fixture CV/JD, Turnstile, countdown.
 //
@@ -63,93 +64,6 @@ const ROLE_FACTS = [
   "Owns a Kubernetes deployment pipeline",
   "GraphQL, and leading 2–3 engineers",
 ];
-
-const TURNSTILE_SCRIPT_SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js";
-
-declare global {
-  interface Window {
-    turnstile?: {
-      render: (
-        container: HTMLElement,
-        options: {
-          sitekey: string;
-          callback: (token: string) => void;
-          "expired-callback"?: () => void;
-        },
-      ) => string;
-      remove: (widgetId: string) => void;
-    };
-  }
-}
-
-// Module-level singleton: React Strict Mode double-invokes effects in dev,
-// and Cloudflare's own script warns loudly ("Turnstile already has been
-// loaded") if it's injected twice. A promise cached outside the component
-// survives repeated mount/cleanup/remount cycles.
-let turnstileScriptPromise: Promise<void> | null = null;
-
-function loadTurnstileScript(): Promise<void> {
-  if (typeof window !== "undefined" && window.turnstile) return Promise.resolve();
-  if (!turnstileScriptPromise) {
-    turnstileScriptPromise = new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = TURNSTILE_SCRIPT_SRC;
-      script.async = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Turnstile script failed to load"));
-      document.body.appendChild(script);
-    });
-  }
-  return turnstileScriptPromise;
-}
-
-function TurnstileWidget({ onToken }: { onToken: (token: string | null) => void }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const widgetIdRef = useRef<string | null>(null);
-  const [scriptLoaded, setScriptLoaded] = useState(
-    () => typeof window !== "undefined" && !!window.turnstile,
-  );
-  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
-
-  useEffect(() => {
-    if (!siteKey) return;
-    let cancelled = false;
-    loadTurnstileScript()
-      .then(() => {
-        if (!cancelled) setScriptLoaded(true);
-      })
-      .catch((error) => console.error("[turnstile]", error));
-    return () => {
-      cancelled = true;
-    };
-  }, [siteKey]);
-
-  useEffect(() => {
-    if (!scriptLoaded || !containerRef.current || !siteKey || !window.turnstile) return;
-
-    const widgetId = window.turnstile.render(containerRef.current, {
-      sitekey: siteKey,
-      callback: onToken,
-      "expired-callback": () => onToken(null),
-    });
-    widgetIdRef.current = widgetId;
-
-    return () => {
-      window.turnstile?.remove(widgetId);
-      widgetIdRef.current = null;
-    };
-  }, [scriptLoaded, siteKey, onToken]);
-
-  if (!siteKey) {
-    return (
-      <p className="text-sm text-red-600">
-        Bot protection isn&apos;t configured yet (NEXT_PUBLIC_TURNSTILE_SITE_KEY) — the demo can&apos;t start.
-      </p>
-    );
-  }
-
-  return <div ref={containerRef} />;
-}
 
 export default function DemoPage() {
   const [language, setLanguage] = useState<InterviewLanguage>("fr");
@@ -406,7 +320,10 @@ export default function DemoPage() {
               </div>
             </div>
 
-            <TurnstileWidget onToken={setTurnstileToken} />
+            <TurnstileWidget
+              onToken={setTurnstileToken}
+              missingKeyMessage="Bot protection isn't configured yet (NEXT_PUBLIC_TURNSTILE_SITE_KEY) — the demo can't start."
+            />
 
             <button
               type="button"
