@@ -497,3 +497,5 @@ write a route test, and what isn't covered: [docs/TESTING.md](docs/TESTING.md).
       interview deletion; `/interviews` rebuilt; local times; light/dark
       switch; WCAG AA contrast (unspecced)
 - [x] Phase 6 — targeted question drill mode (2-min audio drills on individual questions & CV gaps, drill HUD, dedicated DRILL_ARC, and instant STAR scoring)
+- [ ] Production readiness — abuse holes, voice scope, monitoring, capacity,
+      GDPR, deeper testing, staged launch: [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)

@@ -31,6 +31,7 @@ This guide is the single operational source of truth for AI agents (and human de
 - **Phase 5 (Shipping, partly done)**: Failure cleanup, document/roadmap deletion APIs, interview status filters, interactive demo preview, AI disclosure, upload privacy notice, and `DELETE /api/account`. Still open from specs §9: demo reel, error monitoring, uptime check, three real preps.
 - **Virtual Video Interview Room**: Audio-reactive 3D avatar (WebGL) + self-camera mirror practice feed with strictly decoupled camera/mic streams.
 - **Phase 6 (Targeted Question Drill Mode)**: Rapid 2-minute drills on individual stage questions and CV gaps, dedicated `DRILL_ARC` with 1 follow-up probe, in-room drill HUD, and scaled XP scoring.
+- **Next: production readiness** — not public yet. The phased plan, with evidence and per-phase tasks, is [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md). When told "start phase N", follow that file's rules.
 - **Hardening**: Vitest unit/route/component tests, Playwright browser tests with axe scans, GitHub Actions CI (all zero-quota — `docs/TESTING.md`); interview deletion; `/interviews` rebuilt; viewer-local times; System/Light/Dark theme; sign-in page that explains failed links; WCAG AA contrast in dark mode.
 
 ---
