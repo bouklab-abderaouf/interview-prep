@@ -67,7 +67,7 @@ export function InteractiveDemoPreview() {
                 {/* An invented persona, first name only — never a real
                     interviewer's name: this page is public (GDPR). */}
                 <p className="flex items-center gap-1.5 text-sm font-semibold">
-                  Claire
+                  Camille
                   <span className="rounded bg-blue-500/20 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-300">
                     AI
                   </span>
@@ -109,7 +109,7 @@ export function InteractiveDemoPreview() {
 
             <div className="ml-6 rounded-lg bg-blue-50/90 p-3.5 text-xs text-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
               <span className="font-semibold text-blue-950 dark:text-blue-100">You: </span>
-              &ldquo;Bonjour Claire ! J&rsquo;ai 5 ans d&rsquo;expérience sur TypeScript, Next.js et
+              &ldquo;Bonjour Camille ! J&rsquo;ai 5 ans d&rsquo;expérience sur TypeScript, Next.js et
               l&rsquo;intégration de modèles IA génératifs dans des produits web en temps réel...&rdquo;
             </div>
           </div>
