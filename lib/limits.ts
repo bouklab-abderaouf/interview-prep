@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { reportEvent } from "@/lib/monitoring/events";
 
 // Per-user daily limits on everything that spends Gemini quota, counted in
 // Postgres (supabase/migrations/008_user_daily_usage.sql) so they hold
@@ -54,9 +55,11 @@ export async function consumeDailyQuota(supabase: RpcClient, kind: QuotaKind, no
   const { data, error } = await supabase.rpc("consume_user_quota", { p_kind: kind, p_max: limit });
   if (error) {
     console.error(`[limits] consume_user_quota(${kind}) failed`, { message: error.message });
+    reportEvent("limits.unavailable", { kind });
     return { allowed: false, reason: "limits_unavailable", kind };
   }
   if (data === true) return { allowed: true };
+  reportEvent("limits.daily_limit_hit", { kind, limit });
   return { allowed: false, reason: "daily_limit", kind, limit, resetsAt: nextUtcMidnight(now) };
 }
 

@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { ApiError, GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -19,6 +19,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { demoScenario } from "@/lib/fixtures/demo-scenario";
 import { StagePersonaSchema, StageQuestionSchema } from "@/lib/gemini/schemas";
+import { reportEvent } from "@/lib/monitoring/events";
 
 // specs §4.1: shortest workable TTL for connection, session lock shortly
 // after first use so a leaked token is useless within a minute.
@@ -116,11 +117,13 @@ export async function POST(request: Request) {
       ipHash = hashIp(ip);
       const perIpCap = await checkPerIpCap(ipHash);
       if (perIpCap.exceeded) {
+        reportEvent("guardrail.ip_rate_limited");
         return NextResponse.json({ reason: "rate_limited" }, { status: 429 });
       }
 
       const turnstileOk = await verifyTurnstileToken(turnstileToken as string, ip);
       if (!turnstileOk) {
+        reportEvent("guardrail.turnstile_failed");
         return NextResponse.json({ reason: "turnstile_failed" }, { status: 403 });
       }
     } catch (error) {
@@ -256,6 +259,7 @@ export async function POST(request: Request) {
     return NextResponse.json(responseBody);
   } catch (error) {
     console.error("[api/live/token] failed to mint ephemeral token", error);
+    reportEvent("token.mint_failed", { mode, status: error instanceof ApiError ? error.status : "error" });
     if (userId && quotaKind) await releaseDailyQuota(userId, quotaKind);
     return NextResponse.json({ error: "token_mint_failed" }, { status: 502 });
   }

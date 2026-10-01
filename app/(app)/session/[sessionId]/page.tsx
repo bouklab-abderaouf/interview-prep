@@ -13,6 +13,7 @@ import { TurnTimeline } from "@/lib/live/turn-timeline";
 import { describeLimitRefusal } from "@/lib/limit-messages";
 import { createClient } from "@/lib/supabase/client";
 import { InterviewRoom } from "@/components/interview/InterviewRoom";
+import { reportEvent } from "@/lib/monitoring/events";
 
 // Phase 0 §4 walking-skeleton harness, extended in Phase 3 (§7.1) into the
 // real interview room when a stageId is present: mode: 'full', turn capture,
@@ -203,6 +204,7 @@ export default function SessionPage({
   const startResponseWatchdog = useCallback(() => {
     if (responseWatchdogRef.current) clearTimeout(responseWatchdogRef.current);
     responseWatchdogRef.current = setTimeout(() => {
+      reportEvent("live.watchdog_silence", { mode: "full" });
       setStalledWarning(
         "No response yet after 12s. This is usually a transient Live API issue or a free-tier quota limit, not a problem with your answer — check the console, or try again in a bit.",
       );
@@ -230,7 +232,7 @@ export default function SessionPage({
     async (status?: "completed" | "abandoned" | "errored", keepalive = false) => {
       if (!isRealSession) return;
       try {
-        await fetch(`/api/sessions/${sessionId}`, {
+        const res = await fetch(`/api/sessions/${sessionId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -239,8 +241,10 @@ export default function SessionPage({
           }),
           keepalive,
         });
+        if (!res.ok) reportEvent("session.flush_failed", { status: res.status });
       } catch (error) {
         console.error("[session] flush failed", error);
+        reportEvent("session.flush_failed", { status: "network" });
       }
     },
     [isRealSession, sessionId, sinceStart],
@@ -342,6 +346,7 @@ export default function SessionPage({
       micStreamRef.current = micStream;
     } catch (error) {
       console.error("[session start] mic permission failed", error);
+      reportEvent("live.mic_error", { name: error instanceof DOMException ? error.name : "unknown" });
       setErrorMessage(describeMicError(error));
       setStatus("error");
       return;
@@ -365,6 +370,10 @@ export default function SessionPage({
 
       if (!tokenRes.ok) {
         const refusal = await tokenRes.json().catch(() => null);
+        reportEvent("live.token_refused", {
+          status: tokenRes.status,
+          error: (refusal as { error?: string } | null)?.error,
+        });
         throw new Error(describeTokenRefusal(refusal) ?? `token endpoint returned ${tokenRes.status}`);
       }
 
@@ -450,6 +459,7 @@ export default function SessionPage({
           // stop() lands on when it finishes.
           if (endingRef.current) return;
           if (!info.wasClean || info.code !== 1000) {
+            reportEvent("live.closed_abnormally", { mode: "full", code: info.code });
             setErrorMessage(
               `session closed: code ${info.code}${info.reason ? ` — ${info.reason}` : ""}`,
             );

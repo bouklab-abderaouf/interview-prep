@@ -106,6 +106,9 @@ switch, and axe WCAG 2.1 AA scans of every public page in both themes
   regenerates it) and run again.
 - Next's route announcer is a `role="alert"` element on every page, so look
   for alerts inside `page.getByRole("main")`.
+- `beforeEach(() => mock.mockReset())` without braces returns the mock, and
+  Vitest runs a function returned from a hook as a **teardown** — so a mock
+  that throws fails the test after it ends. Use a block body.
 - `react-hooks/purity` rejects `Date.now()` inside a component, server
   components included. Read the clock in the data-loading function and pass
   it down (see `app/(app)/interviews/page.tsx`).

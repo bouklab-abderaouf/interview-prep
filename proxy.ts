@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
 
+import { sentryIngestOrigin } from "@/lib/monitoring/sentry-options";
 import { buildContentSecurityPolicy, createNonce } from "@/lib/security/csp";
 import { updateSession } from "@/lib/supabase/proxy";
 
@@ -17,6 +18,8 @@ export async function proxy(request: NextRequest) {
     nonce: createNonce(),
     dev,
     supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    // Browser error reports go straight to the tracker's ingest host.
+    extraConnect: sentryIngestOrigin(process.env.NEXT_PUBLIC_SENTRY_DSN),
     https: request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https",
   });
   const header =

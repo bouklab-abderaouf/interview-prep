@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { todayKey } from "@/lib/guardrails/kill-switch";
+import { reportEvent } from "@/lib/monitoring/events";
 
 const DEMO_MAX_SESSIONS_PER_DAY = Number(process.env.DEMO_MAX_SESSIONS_PER_DAY ?? 200);
 const DEMO_MAX_SESSIONS_PER_IP_PER_HOUR = Number(process.env.DEMO_MAX_SESSIONS_PER_IP_PER_HOUR ?? 2);
@@ -43,6 +44,8 @@ export async function checkGlobalDailyCap(): Promise<{ exceeded: boolean }> {
     .upsert({ day, killed: true }, { onConflict: "day" });
   if (upsertError) throw upsertError;
 
+  // Once a day at most: from here on checkKillSwitch refuses first.
+  reportEvent("guardrail.kill_switch_tripped", { reason: "daily_cap", limit: DEMO_MAX_SESSIONS_PER_DAY });
   return { exceeded: true };
 }
 

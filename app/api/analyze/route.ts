@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { analyzeGap } from "@/lib/gemini/analyze-gap";
 import { consumeDailyQuota, quotaRefusal, releaseDailyQuota } from "@/lib/limits";
 import type { InterviewLanguage } from "@/lib/live/types";
+import { reportEvent } from "@/lib/monitoring/events";
 
 // 4 MB, not 5: Vercel rejects serverless request bodies over ~4.5 MB before
 // this code runs, with an error the form can't explain.
@@ -115,6 +116,7 @@ export async function POST(request: Request) {
     gapAnalysis = await analyzeGap({ cvBytes, jdText, language: lang });
   } catch (error) {
     console.error("[api/analyze] gap analysis failed", error);
+    reportEvent("analysis.failed", { status: error instanceof ApiError ? error.status : "error" });
     await cleanupFailedAnalysis(supabase, { storagePath, cvDocId: cvDoc.id, jdDocId: jdDoc.id });
     // Gemini being overloaded (503) or out of free-tier quota (429) on every
     // configured model — see withModelFallback — are the two failures seen in

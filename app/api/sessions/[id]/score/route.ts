@@ -9,6 +9,7 @@ import { z } from "zod";
 import type { InterviewLanguage } from "@/lib/live/types";
 import { consumeDailyQuota, quotaRefusal, releaseDailyQuota } from "@/lib/limits";
 import { nextStreak, starsForScore, utcDay, xpForSession } from "@/lib/progression";
+import { reportEvent } from "@/lib/monitoring/events";
 
 // specs §7.3 — one Gemini text call: transcript + stage focus_areas/
 // question_bank + roadmap gaps + deterministic metrics in, Scorecard out.
@@ -121,6 +122,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
     });
   } catch (error) {
     console.error("[api/sessions/:id/score] scoring failed", error);
+    reportEvent("session.scoring_failed", { status: error instanceof ApiError ? error.status : "error", drill: isDrill });
     // Overloaded or out of quota on every model isn't the user's doing, so
     // the attempt doesn't count. Anything else (e.g. a schema rejection)
     // does — otherwise a crafted input could retry for free.

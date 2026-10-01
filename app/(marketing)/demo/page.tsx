@@ -24,6 +24,7 @@ import { AudioVisualizer } from "@/components/interview/AudioVisualizer";
 import { TranscriptFeed, type TranscriptEntry } from "@/components/interview/TranscriptFeed";
 import { StatusBadge } from "@/components/scorecard/StatusBadge";
 import { TurnstileWidget } from "@/components/ui/TurnstileWidget";
+import { reportEvent } from "@/lib/monitoring/events";
 
 // Phase 1 §5.2 — no-auth 2-minute demo: fixture CV/JD, Turnstile, countdown.
 //
@@ -144,6 +145,7 @@ export default function DemoPage() {
 
         if (!tokenRes.ok) {
           const body = await tokenRes.json().catch(() => ({}) as { reason?: string });
+          reportEvent("live.token_refused", { mode: "demo", status: tokenRes.status, error: body.reason });
           throw new Error(body.reason ?? `token endpoint returned ${tokenRes.status}`);
         }
 
@@ -200,6 +202,7 @@ export default function DemoPage() {
           },
           onClose: (info) => {
             if (endedRef.current) return;
+            if (info.code !== 1000) reportEvent("live.closed_abnormally", { mode: "demo", code: info.code });
             if (info.code === 1011) {
               setErrorMessage("The demo's voice service hit its usage limit. Try again later, or see a sample scorecard.");
               setStage("error");
@@ -229,7 +232,10 @@ export default function DemoPage() {
             timelineRef.current.candidateSpeechEnd(sinceStart());
             clearHintTimer();
             hintTimerRef.current = setTimeout(
-              () => setHint("No reply yet — the voice service may be busy. Keep going, or end the demo."),
+              () => {
+                reportEvent("live.watchdog_silence", { mode: "demo" });
+                setHint("No reply yet — the voice service may be busy. Keep going, or end the demo.");
+              },
               REPLY_WATCHDOG_MS,
             );
           },
