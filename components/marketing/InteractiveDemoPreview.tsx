@@ -61,10 +61,17 @@ export function InteractiveDemoPreview() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-semibold text-white shadow-sm">
-                M
+                C
               </div>
               <div className="text-left">
-                <p className="text-sm font-semibold">Maëva Iguenane</p>
+                {/* An invented persona, first name only — never a real
+                    interviewer's name: this page is public (GDPR). */}
+                <p className="flex items-center gap-1.5 text-sm font-semibold">
+                  Claire
+                  <span className="rounded bg-blue-500/20 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-300">
+                    AI
+                  </span>
+                </p>
                 <p className="text-xs text-zinc-500">Lead Tech Recruiter · Strictness: 3/5</p>
               </div>
             </div>
@@ -102,7 +109,7 @@ export function InteractiveDemoPreview() {
 
             <div className="ml-6 rounded-lg bg-blue-50/90 p-3.5 text-xs text-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
               <span className="font-semibold text-blue-950 dark:text-blue-100">You: </span>
-              &ldquo;Bonjour Maëva ! J&rsquo;ai 5 ans d&rsquo;expérience sur TypeScript, Next.js et
+              &ldquo;Bonjour Claire ! J&rsquo;ai 5 ans d&rsquo;expérience sur TypeScript, Next.js et
               l&rsquo;intégration de modèles IA génératifs dans des produits web en temps réel...&rdquo;
             </div>
           </div>
