@@ -4,6 +4,7 @@ import { useCallback, useRef, useState, type ChangeEvent, type DragEvent, type F
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { CONSENT_VERSION, GEMINI_TIER } from "@/lib/legal";
 import { describeLimitRefusal } from "@/lib/limit-messages";
 import type { InterviewLanguage } from "@/lib/live/types";
 
@@ -26,6 +27,7 @@ const ANALYZE_ERROR_MESSAGES: Record<string, string> = {
   quota_exceeded:
     "This app hit its Gemini rate limit. Nothing was saved — try again in a minute; if it keeps happening, today's quota is used up and resets tomorrow.",
   cv_must_be_pdf: "That file isn't a PDF. Export your CV as a PDF and try again.",
+  consent_required: "Tick the consent box first — nothing is sent without it.",
   request_too_large: "That upload is too large. Keep the CV under 4 MB.",
 };
 const JD_MAX_CHARS = 20000;
@@ -39,6 +41,9 @@ export function OnboardingForm() {
   const [stage, setStage] = useState<Stage>("idle");
   const [substepIndex, setSubstepIndex] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // GDPR consent (production readiness phase 5): explicit, unticked by
+  // default, versioned, and enforced again by /api/analyze.
+  const [consented, setConsented] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const substepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -88,6 +93,7 @@ export function OnboardingForm() {
       formData.set("cv", cvFile);
       formData.set("jd", jdText);
       formData.set("language", language);
+      formData.set("consent", CONSENT_VERSION);
 
       const res = await fetch("/api/analyze", { method: "POST", body: formData });
       const body = await res.json().catch(() => ({}) as { error?: string; roadmapId?: string });
@@ -118,15 +124,16 @@ export function OnboardingForm() {
     <main className="flex flex-1 flex-col items-center gap-8 p-16">
       <h1 className="text-xl font-medium">Upload your CV and the job description</h1>
 
-      {/* specs §2 — GEMINI_API_KEY is on the free tier: Google may use
-          submitted content to improve their models. Required notice per the
-          spec's own fallback ("enable paid billing, or put a clear notice on
-          the upload page") since billing wasn't enabled. */}
-      <p className="w-full max-w-xl rounded border border-amber-500 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-        This app currently runs on a free-tier Gemini API key. Google may use
-        the CV and job description you submit here to improve their models.
-        Don&apos;t upload anything you wouldn&apos;t want used that way.
-      </p>
+      {/* specs §2 — on the free tier Google may use submitted content to
+          improve its models; the notice stays until NEXT_PUBLIC_GEMINI_TIER
+          says the key is on a paid tier (lib/legal.ts). */}
+      {GEMINI_TIER === "free" && (
+        <p className="w-full max-w-xl rounded border border-amber-500 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          This app currently runs on a free-tier Gemini API key. Google may use
+          the CV and job description you submit here to improve their models.
+          Don&apos;t upload anything you wouldn&apos;t want used that way.
+        </p>
+      )}
 
       {/* specs §9 — privacy notice on the upload page: what happens to the
           CV, how long it's kept, how to delete it. */}
@@ -140,6 +147,10 @@ export function OnboardingForm() {
           from{" "}
           <Link href="/documents#your-data" className="underline">
             Documents
+          </Link>
+          , where you can also download everything we hold about you. Details in the{" "}
+          <Link href="/privacy" className="underline">
+            privacy policy
           </Link>
           .
         </p>
@@ -198,11 +209,31 @@ export function OnboardingForm() {
           </button>
         </div>
 
-        {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+        <label className="flex items-start gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+          <input
+            type="checkbox"
+            required
+            checked={consented}
+            onChange={(event) => setConsented(event.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600"
+          />
+          <span>
+            I agree that my CV, this job description and what I say in interviews are processed by
+            Google&apos;s Gemini API, in the United States, to build and run my practice interviews,
+            as described in the{" "}
+            <Link href="/privacy" className="underline" target="_blank">
+              privacy policy
+            </Link>
+            .
+          </span>
+        </label>
+
+        {errorMessage && <p className="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>}
 
         <button
           type="submit"
-          className="rounded bg-black px-4 py-2 text-white dark:bg-white dark:text-black"
+          disabled={!consented}
+          className="rounded bg-black px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-black"
         >
           Build my roadmap
         </button>

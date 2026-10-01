@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { createClient } from "@/lib/supabase/server";
 import { MarketingNav } from "@/components/nav/MarketingNav";
+import { SiteFooter } from "@/components/nav/SiteFooter";
 import { getThemePreference } from "@/lib/theme-server";
 
 // Public pages (landing, /sample-scorecard) share one header. Signed-in state
@@ -15,6 +16,7 @@ export default async function MarketingLayout({ children }: { children: ReactNod
     <div className="flex min-h-screen flex-1 flex-col">
       <MarketingNav signedIn={Boolean(data?.claims)} theme={await getThemePreference()} />
       <div className="flex flex-1 flex-col">{children}</div>
+      <SiteFooter />
     </div>
   );
 }

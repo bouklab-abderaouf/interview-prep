@@ -9,6 +9,7 @@ import { SessionTimer } from "@/components/interview/SessionTimer";
 import { AudioVisualizer } from "@/components/interview/AudioVisualizer";
 import { TranscriptFeed, type TranscriptEntry } from "@/components/interview/TranscriptFeed";
 import { ScoreSessionButton } from "@/components/interview/ScoreSessionButton";
+import { GEMINI_TIER } from "@/lib/legal";
 
 interface InterviewRoomProps {
   sessionId: string;
@@ -158,7 +159,10 @@ export function InterviewRoom({
       {status === "idle" && (
         <div className="border-b border-blue-800/40 bg-blue-950/40 px-6 py-2 text-center text-xs text-blue-200">
           You&apos;ll be speaking with an AI interviewer, not a person.
-          {isRealSession && ` ${interviewerName} is a simulated persona generated for this stage.`}
+          {isRealSession && ` ${interviewerName} is a simulated persona generated for this stage.`} Your
+          voice goes to Google&apos;s Gemini API during the session and the transcript is saved to your
+          account
+          {GEMINI_TIER === "free" ? " (on Gemini's free tier, Google may use it to improve its models)" : ""}.
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import { ApiError } from "@google/genai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CONSENT_VERSION } from "@/lib/legal";
 import { fakeSupabase, jsonRequest, routeContext, type Op, type Result } from "@/tests/helpers/fake-supabase";
 
 // Every route that can spend Gemini quota, exercised against a fake database
@@ -228,11 +229,12 @@ describe("POST /api/analyze", () => {
   const PDF = "%PDF-1.4\n%fake but well-formed enough\n";
   const JD = "We are hiring a Python developer to build retrieval-augmented generation systems.";
 
-  function analyzeRequest(cv: string, headers: Record<string, string> = {}) {
+  function analyzeRequest(cv: string, headers: Record<string, string> = {}, consent: string | null = CONSENT_VERSION) {
     const form = new FormData();
     form.set("cv", new File([cv], "cv.pdf", { type: "application/pdf" }));
     form.set("jd", JD);
     form.set("language", "en");
+    if (consent !== null) form.set("consent", consent);
     return new Request("http://x", { method: "POST", body: form, headers });
   }
 
@@ -241,6 +243,26 @@ describe("POST /api/analyze", () => {
       if (op.table === "documents" && op.action === "insert") return { data: { id: "doc-1" } };
       return undefined;
     });
+
+  it.each([
+    ["missing", null],
+    ["for an older wording", "2020-01-01"],
+  ])("refuses without consent (%s), before storing or spending anything", async (_label, consent) => {
+    fake = fakeSupabase({ respond: analysisDatabase(true) });
+    const res = await analyzeRoute(analyzeRequest(PDF, {}, consent));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "consent_required" });
+    expect(fake.ops).toEqual([]);
+  });
+
+  it("records which wording was agreed to, and when, before processing", async () => {
+    fake = fakeSupabase({ respond: analysisDatabase(false) });
+    await analyzeRoute(analyzeRequest(PDF));
+    const consent = fake.ops.find((op) => op.table === "profiles" && op.action === "update");
+    expect(consent?.payload).toMatchObject({ ai_processing_consent_version: CONSENT_VERSION });
+    expect(consent?.filters).toContainEqual(["eq", "id", "user-1"]);
+    expect(fake.ops.indexOf(consent!)).toBeLessThan(fake.ops.findIndex((op) => op.table === "rpc:consume_user_quota"));
+  });
 
   it("refuses a file that only claims to be a PDF, without spending the allowance", async () => {
     fake = fakeSupabase({ respond: analysisDatabase(true) });

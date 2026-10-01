@@ -22,6 +22,7 @@ const EVENTS = {
   "guardrail.turnstile_failed": "info",
   "limits.daily_limit_hit": "info", // a spike of these = someone hammering the API
   "limits.unavailable": "error", // the limit check itself is down; everything fails closed
+  "cron.retention_failed": "error", // the daily GDPR retention job didn't finish
 } as const satisfies Record<string, "info" | "warning" | "error">;
 
 export type MonitoredEvent = keyof typeof EVENTS;

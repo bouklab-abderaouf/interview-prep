@@ -36,7 +36,7 @@ test.describe("theme", () => {
 // Serious and critical WCAG A/AA violations fail the build; minor ones are
 // left to review. Run in both themes: contrast bugs are usually in one.
 test.describe("accessibility", () => {
-  for (const path of ["/", "/sign-in", "/sample-scorecard", "/demo"]) {
+  for (const path of ["/", "/sign-in", "/sample-scorecard", "/demo", "/privacy", "/legal"]) {
     for (const scheme of ["light", "dark"] as const) {
       test(`${path} (${scheme})`, async ({ page }) => {
         await page.emulateMedia({ colorScheme: scheme });

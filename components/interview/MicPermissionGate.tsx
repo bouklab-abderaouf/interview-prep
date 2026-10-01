@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { describeMicError, requestMicrophone } from "@/lib/audio/mic";
+import { GEMINI_TIER } from "@/lib/legal";
 
 interface MicPermissionGateProps {
   /** Receives the granted stream. The gate deliberately does not stop the
@@ -51,8 +52,15 @@ export function MicPermissionGate({ onGranted }: MicPermissionGateProps) {
       </p>
       <p>
         This demo is a live spoken interview — it needs your microphone. Your
-        voice streams directly to the model for this session only; nothing is
-        recorded or stored.
+        voice streams to Google&apos;s Gemini API for this session only; this
+        app doesn&apos;t record or store it
+        {GEMINI_TIER === "free"
+          ? ", but while it runs on Gemini's free tier Google may use it to improve its models."
+          : "."}{" "}
+        <a href="/privacy" className="underline">
+          Privacy policy
+        </a>
+        .
       </p>
       <button
         type="button"

@@ -105,7 +105,7 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **Client Scopes**:
   - `lib/supabase/server.ts`: User-scoped client (respects RLS) for Server Components and Route Handlers.
   - `lib/supabase/client.ts`: Browser client.
-  - `lib/supabase/admin.ts`: Service-role client (bypasses RLS); strictly restricted to anonymous demo sessions, `usage_counters` (which has no RLS policies by design), `auth.admin.deleteUser` in `DELETE /api/account`, and `release_user_quota` refunds in `lib/limits.ts` (in both, the user id always comes from verified claims, never the request).
+  - `lib/supabase/admin.ts`: Service-role client (bypasses RLS); strictly restricted to anonymous demo sessions, `usage_counters` (which has no RLS policies by design), `auth.admin.deleteUser` in `DELETE /api/account`, `release_user_quota` refunds in `lib/limits.ts` (in both, the user id always comes from verified claims, never the request), and the daily retention job (`/api/cron/retention`, behind `CRON_SECRET`).
 - **Required Policies & Triggers**:
   - Migration `005_write_policies.sql`: Grants INSERT policies on `stages` and `scorecards` for authenticated users owning the parent roadmap/session.
   - Migration `006_profiles_autocreate.sql`: Uses a `SECURITY DEFINER` trigger on `auth.users` (`handle_new_user()`) to automatically create `profiles` rows upon signup.
@@ -142,6 +142,7 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **`full`-mode Live tokens always need a signed-in user**, checked before the API-key check. The stage-less smoke test is off in production unless `ENABLE_VOICE_SMOKE_TEST=1`.
 - **CSP** (`lib/security/csp.ts`, sent per request from `proxy.ts`): scripts run by nonce + `'strict-dynamic'` — never add `'unsafe-inline'`/`'unsafe-eval'` to `script-src` in production. A new external origin the browser talks to (an API, a tracker, a CDN) must be added to the policy **and** to `e2e/security.spec.ts`, or it will be blocked for real users. `CSP_REPORT_ONLY=1` is the escape hatch.
 - **Monitoring** (`lib/monitoring/`): report a new failure mode or abuse signal with `reportEvent(name, tags)` — add the name to `EVENTS` with a level, and its alert to docs/RUNBOOK.md. Tags are short codes (status, close code, limit kind), never free text. Never attach transcripts, CV text, emails or request bodies to anything sent to Sentry; `scrub.ts` is an allow-list, so a new field is dropped unless it's added there deliberately.
+- **Personal data (GDPR, phase 5)**: `docs/DATA.md` is the inventory and `/privacy` the public version; both read from `lib/legal.ts`. Adding, moving or keeping data longer means updating both. A new user-owned table must cascade from `auth.users` (tested), appear in `GET /api/account/export` and its test, and get a retention rule. `/api/analyze` requires consent to the current `CONSENT_VERSION`; change the wording or what goes to Google and you bump it. Notices about Google's use of data follow `NEXT_PUBLIC_GEMINI_TIER`, never hard-coded text.
 - **Input caps** live in the route that reads the input (CV 4 MB and `%PDF-` signature, JD 20k chars, turn flushes 500 × 20k chars). Keep the CV cap under Vercel's ~4.5 MB body limit.
 
 ---

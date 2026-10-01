@@ -215,9 +215,24 @@ export default async function DocumentsPage() {
           interview transcripts and scorecards are stored alongside them. Nothing expires on its
           own — it&rsquo;s kept until you delete it. Deleting a roadmap removes its interviews and,
           if no other roadmap uses them, its CV and job description. Deleting your account removes
-          all of it.
+          all of it. How it&rsquo;s processed and who by: the{" "}
+          <Link href="/privacy" className="underline">
+            privacy policy
+          </Link>
+          .
         </p>
-        <DeleteAccountButton />
+        <div className="flex flex-wrap items-center gap-3">
+          {/* GDPR access and portability (Art. 15 and 20). A plain link: the
+              route answers with a JSON file download. */}
+          <a
+            href="/api/account/export"
+            download
+            className="inline-flex h-9 items-center rounded-lg border border-zinc-300 px-3.5 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800"
+          >
+            Download my data (JSON)
+          </a>
+          <DeleteAccountButton />
+        </div>
       </section>
     </main>
   );

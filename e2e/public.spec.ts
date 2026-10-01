@@ -16,6 +16,17 @@ test.describe("public pages", () => {
     expect(consoleErrors).toEqual([]);
   });
 
+  test("every page links to the privacy policy and legal notice", async ({ page, consoleErrors }) => {
+    await page.goto("/");
+    const footer = page.getByRole("navigation", { name: "Legal" });
+    await footer.getByRole("link", { name: "Privacy" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: /Privacy policy/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Français" })).toBeVisible();
+    await page.getByRole("navigation", { name: "Legal" }).getByRole("link", { name: "Legal notice" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: /Legal notice/ })).toBeVisible();
+    expect(consoleErrors).toEqual([]);
+  });
+
   test("header navigation reaches the sample scorecard", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("banner").getByRole("link", { name: "Sample scorecard" }).click();
@@ -51,6 +62,7 @@ test.describe("API refuses anonymous callers", () => {
     ["DELETE", `/api/roadmaps/${id}`],
     ["DELETE", `/api/documents/${id}`],
     ["DELETE", "/api/account"],
+    ["GET", "/api/account/export"],
   ];
 
   for (const [method, path, body] of cases) {

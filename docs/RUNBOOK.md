@@ -72,6 +72,7 @@ CV text. No performance tracing, no session replay.
 | `guardrail.kill_switch_tripped` | The demo hit its daily cap and turned itself off | Any occurrence (it's once a day at most) |
 | `limits.daily_limit_hit` (tag `kind`) | A user hit a daily limit | More than 20 in an hour = someone is hammering the API |
 | `guardrail.ip_rate_limited`, `guardrail.turnstile_failed` | Demo abuse signals | A spike (e.g. more than 30 in an hour) |
+| `cron.retention_failed` | The daily GDPR retention job didn't finish (see *Data retention job*) | Any occurrence |
 | `live.token_refused`, `live.mic_error` | Context for user reports | No alert |
 
 Create these as Sentry *issue alerts* filtered on the `event` tag, sending
@@ -101,3 +102,41 @@ Supabase MCP `get_advisors`). Expected and accepted (2026-10-01):
 - `auth_leaked_password_protection`: not applicable, sign-in is passwordless.
 
 Anything else is new and needs a look.
+
+## Data retention job
+
+`/api/cron/retention` runs daily at 03:17 UTC through Vercel Cron
+(`vercel.json`). It deletes demo IP hashes and daily-usage counters older
+than 30 days (`run_retention()`, migration 009) and CV files that have no
+`documents` row and are more than a day old.
+
+- Needs `CRON_SECRET` set in the hosting env; Vercel sends it as
+  `Authorization: Bearer …`. Without it the route answers 503 and deletes
+  nothing.
+- Run it by hand: `curl -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/retention`.
+  The response gives counts, e.g. `{"ok":true,"demo_sessions":2,"usage_rows":5,"orphan_cvs":0}`.
+- If it fails, a `cron.retention_failed` event goes to Sentry.
+
+## Personal data breach
+
+GDPR art. 33–34. A breach is any accidental or unlawful loss, change,
+disclosure of or access to personal data: a leaked service-role key, a
+policy bug that exposed another user's rows, a lost laptop with `.env.local`.
+
+1. **Contain (first hour).** Rotate whatever leaked: the Supabase
+   service-role and anon keys (Settings → API), `GEMINI_API_KEY` (above),
+   `CRON_SECRET`, `IP_HASH_SALT` if the hashes matter. Flip the demo kill
+   switch and set the `USER_MAX_*` limits to 0 if spending is involved.
+   Redeploy.
+2. **Assess (same day).** What data, whose, how many people, since when?
+   Supabase logs (API, Auth, Storage) and the hosting logs. Write it down
+   as you go: the record is mandatory even if you don't notify.
+3. **Notify the CNIL within 72 hours** of becoming aware, unless the breach
+   is unlikely to put anyone at risk
+   ([notifications.cnil.fr](https://notifications.cnil.fr/notifications/index)).
+   Late is better than never; say why it's late.
+4. **Tell the people affected** without undue delay if the risk to them is
+   high (e.g. CVs or transcripts exposed): what happened, what it means,
+   what you've done, what they can do.
+5. **Fix and record.** The root cause, the fix, and a test that would have
+   caught it. Keep the incident record (art. 33(5)).

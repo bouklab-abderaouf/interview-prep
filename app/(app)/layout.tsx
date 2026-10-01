@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppNav } from "@/components/nav/AppNav";
 import { BrandMark } from "@/components/nav/BrandMark";
+import { SiteFooter } from "@/components/nav/SiteFooter";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { getThemePreference } from "@/lib/theme-server";
 
@@ -41,6 +42,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       </header>
 
       <div className="flex flex-1 flex-col">{children}</div>
+      <SiteFooter />
     </div>
   );
 }

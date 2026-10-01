@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { analyzeGap } from "@/lib/gemini/analyze-gap";
+import { CONSENT_VERSION } from "@/lib/legal";
 import { consumeDailyQuota, quotaRefusal, releaseDailyQuota } from "@/lib/limits";
 import type { InterviewLanguage } from "@/lib/live/types";
 import { reportEvent } from "@/lib/monitoring/events";
@@ -58,12 +59,29 @@ export async function POST(request: Request) {
   if (language !== "fr" && language !== "en") {
     return NextResponse.json({ error: "invalid_language" }, { status: 400 });
   }
+  // GDPR: explicit consent to the current wording, before anything is sent
+  // to Google. The form can't submit without it; this is the server's copy
+  // of that rule.
+  if (formData.get("consent") !== CONSENT_VERSION) {
+    return NextResponse.json({ error: "consent_required" }, { status: 400 });
+  }
   const lang: InterviewLanguage = language;
 
   const cvBytes = Buffer.from(await cvFile.arrayBuffer());
   // The declared type is only the browser's claim; a PDF starts with "%PDF-".
   if (cvBytes.subarray(0, 5).toString("latin1") !== "%PDF-") {
     return NextResponse.json({ error: "cv_must_be_pdf" }, { status: 400 });
+  }
+
+  // Record the consent (when, and to which wording) before processing.
+  // Accountability: without the record, the consent can't be shown later.
+  const { error: consentError } = await supabase
+    .from("profiles")
+    .update({ ai_processing_consent_at: new Date().toISOString(), ai_processing_consent_version: CONSENT_VERSION })
+    .eq("id", userId);
+  if (consentError) {
+    console.error("[api/analyze] consent record failed", { message: consentError.message });
+    return NextResponse.json({ error: "consent_record_failed" }, { status: 502 });
   }
 
   // Per-user daily limit: after validation, so a rejected upload doesn't
