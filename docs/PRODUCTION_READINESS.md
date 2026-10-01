@@ -18,7 +18,7 @@ keeps this file up to date as it goes.
 | 3 | [Monitoring and alerting](#phase-3--monitoring-and-alerting) | **Code done** — accounts and alerts left | Create Sentry and uptime accounts | ~1 Live session |
 | 4 | [Billing and capacity](#phase-4--billing-and-capacity) | **Code done** — your numbers and decision left | Read quota numbers; billing decision | None |
 | 5 | [GDPR / RGPD](#phase-5--gdpr--rgpd) | **Code done** — your details, DPAs, review left | Legal identity, DPAs, legal review | None |
-| 6 | [Test depth, known bugs, private beta](#phase-6--test-depth-known-bugs-private-beta) | **Code done** — first CI run, device pass, beta left | Docker; device testing; recruit 3–5 testers | ~5–10 Live sessions |
+| 6 | [Test depth, known bugs, private beta](#phase-6--test-depth-known-bugs-private-beta) | **Code done** (signed-in CI green) — device pass, beta left | Docker; device testing; recruit 3–5 testers | ~5–10 Live sessions |
 | 7 | [Staged launch](#phase-7--staged-launch) | **Code done** — PR merge and launch steps are yours | Hosting account, SMTP, domain | Real traffic |
 
 Order matters: 1 before anything is public; 4 before 5 (GDPR depends on the
@@ -414,15 +414,16 @@ real devices, real people) before strangers do.
   the guard is stronger than `NODE_ENV`, which is `production` in the e2e
   build too: it also requires Supabase on this machine, which a real
   deployment never is.)
-- [~] Signed-in e2e: onboarding → roadmap → start a stage (session row) →
+- [x] Signed-in e2e: onboarding → roadmap → start a stage (session row) →
   score with the fake → scorecard → interviews (filter, delete, clear) →
   documents → export (Phase 5) → account deletion. Run it in CI.
   (6ce1f0f — `e2e-auth/`, `npm run test:e2e:auth`, plus a CI job that
-  starts a local Supabase on the runner. *Not yet run anywhere:* Docker
-  Desktop fails to start on this machine ("initializing Inference manager
-  … dockerInference: The file cannot be accessed by the system"). The
-  first CI run (phase 7's pull request) is its first real run; fix
-  anything it finds there.)
+  starts a local Supabase on the runner. First run in CI: 5 of 6 passed;
+  the sixth was a wrong expectation in the test (a6145a2). Green since:
+  6/6 in [run 36925228604](https://github.com/bouklab-abderaouf/interview-prep/actions/runs/36925228604).
+  It can't run on this machine yet: Docker Desktop fails to start here
+  ("initializing Inference manager … dockerInference: The file cannot be
+  accessed by the system").)
   - [ ] **[you]** Optional, for running it locally: fix Docker Desktop (its
     error dialog offers a factory reset, which wipes Docker's data — try
     restarting Windows first), then `npx supabase start` and
@@ -456,10 +457,9 @@ live; the device checklist is run; beta feedback is triaged and the
 blocking bugs are fixed.
 
 **Outcome (2026-10-01):** the empty-session bug is fixed at its cause,
-the font is fixed, the fake Gemini and local-Supabase setup are in, and the
-signed-in suite is written and wired into CI. Waiting on: its first CI run,
-your live check of the session fix, the device checklist, and the private
-beta.
+the font is fixed, and the signed-in suite runs green in CI against a local
+Supabase. Waiting on you: a live check of the session fix, the device
+checklist, and the private beta.
 
 ---
 
@@ -469,9 +469,12 @@ beta.
 
 **Tasks**
 - [~] Merge the work branch to `main` through a PR; CI green.
-  (`ship/phase-5-remaining` is pushed and CI runs on every branch push now;
-  results below. The GitHub CLI isn't installed here and opening a PR needs
-  your GitHub login, so:)
+  (`ship/phase-5-remaining` is pushed and CI runs on every branch push.
+  **All three jobs are green** — typecheck/lint/unit (286 tests), browser
+  (54), signed-in (6) — in
+  [run 36925228604](https://github.com/bouklab-abderaouf/interview-prep/actions/runs/36925228604).
+  The GitHub CLI isn't installed here and opening a PR needs your GitHub
+  login, so:)
   - [ ] **[you]** Open the PR —
     <https://github.com/bouklab-abderaouf/interview-prep/compare/main...ship/phase-5-remaining?expand=1> —
     and merge once CI is green.
@@ -506,5 +509,6 @@ beta.
 **Done when:** Stage C is live, monitored, and has a written rollback.
 
 **Outcome (2026-10-01):** the engineering is done: the sign-up gate, the
-rollback plan, a launch checklist, and the branch pushed with CI running on
-it. Everything left is yours, in order, in [LAUNCH.md](LAUNCH.md).
+rollback plan, a launch checklist, and the branch pushed with all CI jobs
+green. Everything left is yours, in order, in [LAUNCH.md](LAUNCH.md),
+starting with opening and merging the PR.
