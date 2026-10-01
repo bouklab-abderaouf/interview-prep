@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { consumeDailyQuota, quotaRefusal, releaseDailyQuota } from "@/lib/limits";
 import { createClient } from "@/lib/supabase/server";
 
 const RequestSchema = z.object({
@@ -60,6 +61,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "stage_locked" }, { status: 403 });
   }
 
+  // Rows are cheap but not free, and each one becomes a room that can mint a
+  // token; a daily cap stops a script from filling the table.
+  const quota = await consumeDailyQuota(supabase, "session_create");
+  if (!quota.allowed) return quotaRefusal(quota);
+
   const qBank = Array.isArray(stage.question_bank) ? stage.question_bank : [];
   const targetQ =
     drill && questionIndex !== undefined && qBank[questionIndex]
@@ -90,6 +96,7 @@ export async function POST(request: Request) {
     .single();
   if (sessionError) {
     console.error("[api/sessions] insert failed", sessionError);
+    await releaseDailyQuota(userId, "session_create");
     return NextResponse.json({ error: "session_insert_failed" }, { status: 502 });
   }
 

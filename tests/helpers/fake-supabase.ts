@@ -7,7 +7,7 @@
 
 export interface Op {
   table: string;
-  action: "select" | "insert" | "update" | "delete" | "upsert";
+  action: "select" | "insert" | "update" | "delete" | "upsert" | "rpc" | "storage";
   filters: Array<[op: string, column: string, value: unknown]>;
   columns?: string;
   returning?: string;
@@ -88,7 +88,44 @@ export function fakeSupabase({
     return chain;
   };
 
+  // rpc("fn", args) is recorded as { table: "rpc:fn", action: "rpc", payload: args }.
+  const rpc = (fn: string, args: Record<string, unknown> = {}) => {
+    const op: Op = { table: `rpc:${fn}`, action: "rpc", filters: [], payload: args };
+    return {
+      then<T>(resolve: (value: Required<Result>) => T, reject?: (reason: unknown) => T) {
+        ops.push(op);
+        const result = respond(op) ?? {};
+        return Promise.resolve({
+          data: result.data ?? null,
+          error: result.error ?? null,
+          count: result.count ?? null,
+        }).then(resolve, reject);
+      },
+    };
+  };
+
+  // storage.from(bucket).upload/remove/list/createSignedUrl is recorded as
+  // { table: "storage:<bucket>", action: "storage", columns: <method>, payload }.
+  const storage = {
+    from: (bucket: string) => {
+      const call = (method: string) => async (...args: unknown[]) => {
+        const op: Op = { table: `storage:${bucket}`, action: "storage", columns: method, filters: [], payload: args };
+        ops.push(op);
+        const result = respond(op) ?? {};
+        return { data: result.data ?? null, error: result.error ?? null };
+      };
+      return {
+        upload: call("upload"),
+        remove: call("remove"),
+        list: call("list"),
+        createSignedUrl: call("createSignedUrl"),
+      };
+    },
+  };
+
   const client = {
+    rpc,
+    storage,
     auth: {
       getClaims: async () => ({
         data: userId ? { claims: { sub: userId, email: `${userId}@example.com` } } : null,

@@ -3,15 +3,24 @@ import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
 
+// Caps far above any real interview (a 10-minute session is ~60 turns; a
+// 3-minute monologue is ~3,000 characters) — they exist to stop a script
+// from storing megabytes per row, not to police candidates. Timings are only
+// required to be finite: rejecting a flush over a timing quirk would lose a
+// real interview's turns.
+const MAX_TURNS = 500;
+const MAX_TRANSCRIPT_CHARS = 20_000;
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
 const TurnSchema = z.object({
   role: z.enum(["interviewer", "candidate"]),
-  transcript: z.string(),
-  start_ms: z.number(),
-  end_ms: z.number(),
+  transcript: z.string().max(MAX_TRANSCRIPT_CHARS),
+  start_ms: z.number().finite(),
+  end_ms: z.number().finite(),
 });
 
 const PatchSchema = z.object({
-  turns: z.array(TurnSchema),
+  turns: z.array(TurnSchema).max(MAX_TURNS),
   status: z.enum(["active", "completed", "abandoned", "errored"]).optional(),
 });
 
@@ -28,6 +37,10 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/sessions/[
   const userId = claimsData?.claims.sub;
   if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "request_too_large" }, { status: 413 });
   }
 
   let body: unknown;

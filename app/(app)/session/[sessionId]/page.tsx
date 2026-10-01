@@ -10,6 +10,7 @@ import { createAudioPlayer, type AudioPlayerHandle } from "@/lib/audio/player";
 import { connectLiveSession, sendAudioChunk, startInterviewerTurn } from "@/lib/live/client";
 import type { TokenResponseBody } from "@/lib/live/types";
 import { TurnTimeline } from "@/lib/live/turn-timeline";
+import { describeLimitRefusal } from "@/lib/limit-messages";
 import { createClient } from "@/lib/supabase/client";
 import { InterviewRoom } from "@/components/interview/InterviewRoom";
 
@@ -293,7 +294,10 @@ export default function SessionPage({
       await flushTurns("completed");
       try {
         const res = await fetch(`/api/sessions/${sessionId}/score`, { method: "POST" });
-        if (!res.ok) throw new Error(`score endpoint returned ${res.status}`);
+        if (!res.ok) {
+          const refusal = describeLimitRefusal(await res.json().catch(() => null));
+          throw new Error(refusal ? `Your interview was saved, but it can't be scored yet. ${refusal}` : `score endpoint returned ${res.status}`);
+        }
         router.push(`/scorecard/${sessionId}`);
         return;
       } catch (error) {
@@ -301,8 +305,11 @@ export default function SessionPage({
         // The turns are already flushed and the session is marked completed,
         // so this is recoverable — surface the retry rather than stranding a
         // finished interview behind a console message.
+        const message = error instanceof Error ? error.message : "";
         setErrorMessage(
-          "Your interview was saved, but scoring failed — usually the model being briefly overloaded.",
+          message.startsWith("Your interview was saved")
+            ? message
+            : "Your interview was saved, but scoring failed — usually the model being briefly overloaded.",
         );
         setScoringRecoverable(true);
         setStatus("error");
@@ -357,7 +364,8 @@ export default function SessionPage({
       });
 
       if (!tokenRes.ok) {
-        throw new Error(`token endpoint returned ${tokenRes.status}`);
+        const refusal = await tokenRes.json().catch(() => null);
+        throw new Error(describeTokenRefusal(refusal) ?? `token endpoint returned ${tokenRes.status}`);
       }
 
       const tokenBody: TokenResponseBody = await tokenRes.json();
@@ -531,4 +539,24 @@ function percentile(samples: number[], p: number): number | null {
   const sorted = [...samples].sort((a, b) => a - b);
   const index = Math.min(sorted.length - 1, Math.floor(p * sorted.length));
   return sorted[index];
+}
+
+// Why the server refused a Live token, in words. The microphone was granted
+// but nothing was spent, so each says what to do next.
+function describeTokenRefusal(body: unknown): string | null {
+  const limit = describeLimitRefusal(body);
+  if (limit) return limit;
+  const error = body && typeof body === "object" ? (body as { error?: string }).error : undefined;
+  switch (error) {
+    case "unauthorized":
+      return "Your session has expired. Sign in again to start the interview.";
+    case "stage_locked":
+      return "This stage is still locked. Pass the previous stage first.";
+    case "smoke_test_disabled":
+      return "The voice connectivity test is turned off on this server. Start an interview from a roadmap instead.";
+    case "token_mint_failed":
+      return "The voice service didn't respond. Nothing was used — try again in a minute.";
+    default:
+      return null;
+  }
 }

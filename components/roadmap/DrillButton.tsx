@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { describeLimitRefusal } from "@/lib/limit-messages";
 
 interface DrillButtonProps {
   stageId: string;
@@ -34,7 +35,7 @@ export function DrillButton({
       });
       const body = (await res.json().catch(() => ({}))) as { sessionId?: string; error?: string };
       if (!res.ok || !body.sessionId) {
-        throw new Error(body.error ?? `Failed to start drill (${res.status})`);
+        throw new Error(describeLimitRefusal(body) ?? body.error ?? `Failed to start drill (${res.status})`);
       }
       router.push(`/session/${body.sessionId}?stageId=${stageId}&drill=true&qIndex=${questionIndex}`);
     } catch (error) {

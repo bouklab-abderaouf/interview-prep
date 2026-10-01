@@ -1,3 +1,4 @@
+import { ApiError } from "@google/genai";
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
@@ -6,6 +7,7 @@ import { scoreSession } from "@/lib/gemini/score-session";
 import { GapAnalysis, StageQuestionSchema } from "@/lib/gemini/schemas";
 import { z } from "zod";
 import type { InterviewLanguage } from "@/lib/live/types";
+import { consumeDailyQuota, quotaRefusal, releaseDailyQuota } from "@/lib/limits";
 import { nextStreak, starsForScore, utcDay, xpForSession } from "@/lib/progression";
 
 // specs §7.3 — one Gemini text call: transcript + stage focus_areas/
@@ -99,6 +101,11 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
   const isDrill = Boolean(session.usage?.drill);
   const targetQuestion = session.usage?.targetQuestion ?? undefined;
 
+  // Taken only now, when a Gemini call is certain: an already-scored
+  // session or one with no turns returned above without spending anything.
+  const quota = await consumeDailyQuota(supabase, "scoring");
+  if (!quota.allowed) return quotaRefusal(quota);
+
   let scorecard;
   try {
     scorecard = await scoreSession({
@@ -114,6 +121,12 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[i
     });
   } catch (error) {
     console.error("[api/sessions/:id/score] scoring failed", error);
+    // Overloaded or out of quota on every model isn't the user's doing, so
+    // the attempt doesn't count. Anything else (e.g. a schema rejection)
+    // does — otherwise a crafted input could retry for free.
+    if (error instanceof ApiError && (error.status === 503 || error.status === 429)) {
+      await releaseDailyQuota(userId, "scoring");
+    }
     return NextResponse.json({ error: "scoring_failed" }, { status: 502 });
   }
 

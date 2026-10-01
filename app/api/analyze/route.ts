@@ -5,11 +5,16 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { analyzeGap } from "@/lib/gemini/analyze-gap";
+import { consumeDailyQuota, quotaRefusal, releaseDailyQuota } from "@/lib/limits";
 import type { InterviewLanguage } from "@/lib/live/types";
 
-const CV_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+// 4 MB, not 5: Vercel rejects serverless request bodies over ~4.5 MB before
+// this code runs, with an error the form can't explain.
+const CV_MAX_BYTES = 4 * 1024 * 1024;
 const JD_MAX_CHARS = 20000;
 const JD_MIN_CHARS = 50;
+// The CV, the JD (at most 4 bytes a character in UTF-8) and multipart overhead.
+const MAX_REQUEST_BYTES = CV_MAX_BYTES + JD_MAX_CHARS * 4 + 64 * 1024;
 
 const STAGE_DEFAULTS = { maxSeconds: 600, passScore: 60 };
 
@@ -22,6 +27,11 @@ export async function POST(request: Request) {
   const userId = claimsData?.claims.sub;
   if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // Refuse an oversized body before reading it into memory.
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) {
+    return NextResponse.json({ error: "request_too_large" }, { status: 413 });
   }
 
   let formData: FormData;
@@ -50,6 +60,17 @@ export async function POST(request: Request) {
   const lang: InterviewLanguage = language;
 
   const cvBytes = Buffer.from(await cvFile.arrayBuffer());
+  // The declared type is only the browser's claim; a PDF starts with "%PDF-".
+  if (cvBytes.subarray(0, 5).toString("latin1") !== "%PDF-") {
+    return NextResponse.json({ error: "cv_must_be_pdf" }, { status: 400 });
+  }
+
+  // Per-user daily limit: after validation, so a rejected upload doesn't
+  // spend it; before anything is stored or sent to Gemini. Failures that
+  // aren't the user's doing give it back.
+  const quota = await consumeDailyQuota(supabase, "analysis");
+  if (!quota.allowed) return quotaRefusal(quota);
+  const refund = () => releaseDailyQuota(userId, "analysis");
 
   // 2. Upload the PDF to Storage at {user_id}/{document_id}.pdf
   const cvDocumentId = randomUUID();
@@ -59,6 +80,7 @@ export async function POST(request: Request) {
     .upload(storagePath, cvBytes, { contentType: "application/pdf" });
   if (uploadError) {
     console.error("[api/analyze] storage upload failed", uploadError);
+    await refund();
     return NextResponse.json({ error: "cv_upload_failed" }, { status: 502 });
   }
 
@@ -71,6 +93,7 @@ export async function POST(request: Request) {
   if (cvDocError) {
     console.error("[api/analyze] cv document insert failed", cvDocError);
     await cleanupFailedAnalysis(supabase, { storagePath });
+    await refund();
     return NextResponse.json({ error: "cv_document_insert_failed" }, { status: 502 });
   }
 
@@ -82,6 +105,7 @@ export async function POST(request: Request) {
   if (jdDocError) {
     console.error("[api/analyze] jd document insert failed", jdDocError);
     await cleanupFailedAnalysis(supabase, { storagePath, cvDocId: cvDoc.id });
+    await refund();
     return NextResponse.json({ error: "jd_document_insert_failed" }, { status: 502 });
   }
 
@@ -96,10 +120,15 @@ export async function POST(request: Request) {
     // configured model — see withModelFallback — are the two failures seen in
     // practice, and they call for different advice: "try again in a few
     // minutes" vs "tomorrow". A bare analysis_failed told the user neither.
+    // Neither is the user's doing, so the attempt doesn't count. Any other
+    // failure (e.g. a PDF the model rejects) does — otherwise a crafted
+    // upload could retry for free.
     if (error instanceof ApiError && error.status === 503) {
+      await refund();
       return NextResponse.json({ error: "model_busy" }, { status: 503 });
     }
     if (error instanceof ApiError && error.status === 429) {
+      await refund();
       return NextResponse.json({ error: "quota_exceeded" }, { status: 429 });
     }
     return NextResponse.json({ error: "analysis_failed" }, { status: 502 });
@@ -124,6 +153,7 @@ export async function POST(request: Request) {
   if (roadmapError) {
     console.error("[api/analyze] roadmap insert failed", roadmapError);
     await cleanupFailedAnalysis(supabase, { storagePath, cvDocId: cvDoc.id, jdDocId: jdDoc.id });
+    await refund();
     return NextResponse.json({ error: "roadmap_insert_failed" }, { status: 502 });
   }
 
@@ -152,6 +182,7 @@ export async function POST(request: Request) {
       jdDocId: jdDoc.id,
       roadmapId: roadmap.id,
     });
+    await refund();
     return NextResponse.json({ error: "stages_insert_failed" }, { status: 502 });
   }
 
@@ -171,6 +202,7 @@ export async function POST(request: Request) {
       jdDocId: jdDoc.id,
       roadmapId: roadmap.id,
     });
+    await refund();
     return NextResponse.json({ error: "progress_insert_failed" }, { status: 502 });
   }
 

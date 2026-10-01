@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { describeLimitRefusal } from "@/lib/limit-messages";
+
 interface ScoreSessionButtonProps {
   sessionId: string;
   label?: string;
@@ -28,9 +30,10 @@ export function ScoreSessionButton({ sessionId, label = "Score this interview", 
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         throw new Error(
-          body.error === "scoring_failed"
-            ? "The scoring model is busy right now. Your interview is saved — try again in a minute."
-            : (body.error ?? `scoring failed with ${res.status}`),
+          describeLimitRefusal(body) ??
+            (body.error === "scoring_failed"
+              ? "The scoring model is busy right now. Your interview is saved — try again in a minute."
+              : (body.error ?? `scoring failed with ${res.status}`)),
         );
       }
       router.push(`/scorecard/${sessionId}`);

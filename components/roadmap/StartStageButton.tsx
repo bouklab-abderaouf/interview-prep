@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { describeLimitRefusal } from "@/lib/limit-messages";
 
 interface StartStageButtonProps {
   stageId: string;
@@ -28,7 +29,7 @@ export function StartStageButton({ stageId, label = "Start" }: StartStageButtonP
       });
       const body = await res.json().catch(() => ({}) as { sessionId?: string; error?: string });
       if (!res.ok || !body.sessionId) {
-        throw new Error(body.error ?? `sessions endpoint returned ${res.status}`);
+        throw new Error(describeLimitRefusal(body) ?? body.error ?? `sessions endpoint returned ${res.status}`);
       }
       router.push(`/session/${body.sessionId}?stageId=${stageId}`);
     } catch (error) {

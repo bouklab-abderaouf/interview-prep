@@ -14,6 +14,7 @@ import {
   incrementDemoSessionCount,
 } from "@/lib/guardrails/rate-limit";
 import { verifyTurnstileToken } from "@/lib/guardrails/turnstile";
+import { consumeDailyQuota, quotaRefusal, releaseDailyQuota, type QuotaKind } from "@/lib/limits";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { demoScenario } from "@/lib/fixtures/demo-scenario";
@@ -51,14 +52,16 @@ const TokenRequestSchema = z
     path: ["turnstileToken"],
   });
 
+// The Phase 0 connectivity check (`full` with no stageId): a bare Live
+// session with a generic prompt. It used to be reachable by anyone, with no
+// sign-in, no bot check and no limit — an open faucet on the Gemini key once
+// the site is public. Now it needs a signed-in user, counts against their
+// daily interviews, and is off in production unless explicitly enabled.
+function smokeTestEnabled(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.ENABLE_VOICE_SMOKE_TEST === "1";
+}
+
 export async function POST(request: Request) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_LIVE_MODEL;
-
-  if (!apiKey || !model) {
-    return NextResponse.json({ error: "server_misconfigured" }, { status: 500 });
-  }
-
   let body: unknown;
   try {
     body = await request.json();
@@ -73,8 +76,29 @@ export async function POST(request: Request) {
 
   const { mode, stageId, drill, questionIndex, turnstileToken, language: requestedLanguage } = parsed.data;
 
-  // specs §5.3 — enforced in this exact order, demo mode only. 'full' mode's
-  // guard is an auth check, which doesn't exist until Phase 2.
+  // Every 'full' token needs a signed-in user, checked before anything else
+  // so even a misconfigured server answers anonymous callers with a 401.
+  const supabase = mode === "full" ? await createClient() : null;
+  let userId: string | undefined;
+  if (supabase) {
+    const { data: claimsData } = await supabase.auth.getClaims();
+    userId = claimsData?.claims.sub;
+    if (!userId) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    if (!stageId && !smokeTestEnabled()) {
+      return NextResponse.json({ error: "smoke_test_disabled" }, { status: 403 });
+    }
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_LIVE_MODEL;
+  if (!apiKey || !model) {
+    return NextResponse.json({ error: "server_misconfigured" }, { status: 500 });
+  }
+
+  // specs §5.3 — enforced in this exact order, demo mode only. 'full' mode is
+  // guarded by the sign-in check above and the daily limit below.
   let ipHash: string | null = null;
   if (mode === "demo") {
     try {
@@ -107,19 +131,11 @@ export async function POST(request: Request) {
 
   // specs §7 — 'full' mode with a stageId: a real authenticated session,
   // gated on ownership (RLS on `stages`/`progress`) and the stage being
-  // unlocked (specs §8.3 acceptance criteria). Without a stageId, 'full'
-  // stays the ungated connectivity smoke test from Phase 0 — no CV data, no
-  // stage-specific prompt, low enough risk to leave as a quick manual check.
+  // unlocked (specs §8.3 acceptance criteria). Without a stageId it's the
+  // smoke test above — no CV data, no stage-specific prompt.
   let stageContext: StageContext | undefined;
   let stageLanguage: InterviewLanguage | undefined;
-  if (mode === "full" && stageId) {
-    const supabase = await createClient();
-    const { data: claimsData } = await supabase.auth.getClaims();
-    const userId = claimsData?.claims.sub;
-    if (!userId) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
-
+  if (supabase && userId && stageId) {
     const { data: stage, error: stageError } = await supabase
       .from("stages")
       .select("title, focus_areas, persona, question_bank, roadmaps(language)")
@@ -172,6 +188,15 @@ export async function POST(request: Request) {
   // Defaults to 'fr' — matches profiles.locale and sessions.language
   // defaults — when nothing more specific is available.
   const language = stageLanguage ?? requestedLanguage ?? "fr";
+
+  // Per-user daily limit, taken last so a refused stage or a bad request
+  // doesn't spend it. Given back below if the mint itself fails.
+  let quotaKind: QuotaKind | null = null;
+  if (supabase && userId) {
+    quotaKind = stageContext?.drill ? "drill_token" : "interview_token";
+    const quota = await consumeDailyQuota(supabase, quotaKind);
+    if (!quota.allowed) return quotaRefusal(quota);
+  }
 
   // specs §5.3 step 5 — increment counters and insert the sessions row
   // before minting. Demo sessions get user_id = null; no anon RLS policy
@@ -231,6 +256,7 @@ export async function POST(request: Request) {
     return NextResponse.json(responseBody);
   } catch (error) {
     console.error("[api/live/token] failed to mint ephemeral token", error);
+    if (userId && quotaKind) await releaseDailyQuota(userId, quotaKind);
     return NextResponse.json({ error: "token_mint_failed" }, { status: 502 });
   }
 }

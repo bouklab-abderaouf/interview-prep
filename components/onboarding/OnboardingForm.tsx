@@ -4,6 +4,7 @@ import { useCallback, useRef, useState, type ChangeEvent, type DragEvent, type F
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { describeLimitRefusal } from "@/lib/limit-messages";
 import type { InterviewLanguage } from "@/lib/live/types";
 
 // Phase 2 §6.3 — CV drag-and-drop, JD textarea, language toggle. Lives in
@@ -13,7 +14,7 @@ import type { InterviewLanguage } from "@/lib/live/types";
 type Stage = "idle" | "analyzing" | "error";
 
 const SUBSTEPS = ["Reading your CV", "Matching against the role", "Building your path"];
-const CV_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const CV_MAX_BYTES = 4 * 1024 * 1024; // 4 MB — matches app/api/analyze
 
 // The two Gemini failures actually seen in practice. Anything else still
 // shows its raw code, which is at least searchable in the server log.
@@ -24,6 +25,8 @@ const ANALYZE_ERROR_MESSAGES: Record<string, string> = {
     "Gemini is overloaded right now and didn't respond after several tries. Nothing was saved — wait a few minutes and submit again.",
   quota_exceeded:
     "This app hit its Gemini rate limit. Nothing was saved — try again in a minute; if it keeps happening, today's quota is used up and resets tomorrow.",
+  cv_must_be_pdf: "That file isn't a PDF. Export your CV as a PDF and try again.",
+  request_too_large: "That upload is too large. Keep the CV under 4 MB.",
 };
 const JD_MAX_CHARS = 20000;
 const JD_MIN_CHARS = 50;
@@ -47,7 +50,7 @@ export function OnboardingForm() {
       return;
     }
     if (file.size > CV_MAX_BYTES) {
-      setErrorMessage("CV must be under 5 MB.");
+      setErrorMessage("CV must be under 4 MB.");
       return;
     }
     setErrorMessage(null);
@@ -91,7 +94,7 @@ export function OnboardingForm() {
 
       if (!res.ok || !body.roadmapId) {
         const code = body.error ?? `analyze returned ${res.status}`;
-        throw new Error(ANALYZE_ERROR_MESSAGES[code] ?? code);
+        throw new Error(describeLimitRefusal(body) ?? ANALYZE_ERROR_MESSAGES[code] ?? code);
       }
 
       router.push(`/roadmap/${body.roadmapId}`);
@@ -161,7 +164,7 @@ export function OnboardingForm() {
               {cvFile.name} ({(cvFile.size / 1024 / 1024).toFixed(1)} MB)
             </p>
           ) : (
-            <p className="text-zinc-500 dark:text-zinc-400">Drag &amp; drop your CV (PDF, max 5 MB), or click to browse</p>
+            <p className="text-zinc-500 dark:text-zinc-400">Drag &amp; drop your CV (PDF, max 4 MB), or click to browse</p>
           )}
         </div>
 
