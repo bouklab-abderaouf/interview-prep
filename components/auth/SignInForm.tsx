@@ -189,6 +189,12 @@ export function SignInForm({ linkError }: { linkError: LinkError | null }) {
 function describeSendError(error: { status?: number; message: string }): string {
   if (error.status === 429) return "Too many sign-in emails. Wait a minute, then try again.";
   if (/captcha/i.test(error.message)) return "The bot check didn't pass. Complete it again, then resend.";
+  // The sign-up gate (supabase/migrations/010_signup_gate.sql) refuses new
+  // users while sign-ups are invite-only or closed; Supabase reports any
+  // refused insert this generic way. Existing users are never refused.
+  if (/database error saving new user|signups_closed/i.test(error.message)) {
+    return "New sign-ups are closed for now. If you were invited, use the address the invitation was sent to.";
+  }
   // "Failed to fetch": the browser never got Supabase's reply. The request
   // often did go through (seen in the auth logs: email sent, browser still
   // errored), and supabase-js has already dropped this attempt's verifier,

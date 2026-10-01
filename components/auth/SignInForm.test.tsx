@@ -46,6 +46,7 @@ describe("SignInForm", () => {
     [{ status: 429, message: "rate limit" }, /Too many sign-in emails/],
     [{ status: 0, message: "Failed to fetch" }, /Couldn't reach the sign-in server/],
     [{ status: 400, message: "captcha protection: request disallowed" }, /bot check didn't pass/],
+    [{ status: 500, message: "Database error saving new user" }, /sign-ups are closed/i],
   ])("explains a failed send (%o)", async (error, message) => {
     const SignInForm = await loadForm(false);
     signInWithOtp.mockResolvedValue({ error });

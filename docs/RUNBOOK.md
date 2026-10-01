@@ -140,3 +140,40 @@ policy bug that exposed another user's rows, a lost laptop with `.env.local`.
    what you've done, what they can do.
 5. **Fix and record.** The root cause, the fix, and a test that would have
    caught it. Keep the incident record (art. 33(5)).
+
+## Sign-ups
+
+New users can be let in freely, by invitation only, or not at all. Existing
+users can always sign in. The gate is a database trigger
+(`supabase/migrations/010_signup_gate.sql`), so it holds however the sign-up
+arrives. Run these in the Supabase SQL editor:
+
+```sql
+-- Who can sign up: 'open' | 'allowlist' | 'closed'
+update app_settings set value = 'allowlist' where key = 'signups';
+
+-- Invite someone (stage A)
+insert into signup_allowlist (email, note) values (lower('friend@example.com'), 'beta tester');
+
+-- See the current mode and the invitations
+select * from app_settings;
+select * from signup_allowlist order by added_at;
+```
+
+A refused sign-up sees "New sign-ups are closed for now. If you were
+invited, use the address the invitation was sent to." Deleting an account
+also deletes its invitation.
+
+## Rollback
+
+From least to most drastic:
+
+1. **A feature misbehaves:** use its switch above (the per-user limits at
+   `0`, `CSP_REPORT_ONLY=1`, the demo kill switch).
+2. **Too much traffic or abuse:** `update app_settings set value = 'closed' where key = 'signups';`
+   (takes effect immediately, no deploy) plus the demo kill switch.
+3. **A bad deploy:** Vercel → Deployments → the last good one → *Promote
+   to Production* (instant, no rebuild). Then revert the commit on `main`.
+4. **A bad migration:** migrations only move forward. Write a new one that
+   undoes the change, apply it, and keep both in `supabase/migrations`.
+   Supabase's daily backups are the last resort (Database → Backups).

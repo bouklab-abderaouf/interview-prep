@@ -26,6 +26,7 @@ policy before opening sign-ups.*
 | Bot-check signals | Not stored by the app | Cloudflare Turnstile | Abuse prevention on the demo (and sign-in if enabled) | Legitimate interest (f) | Cloudflare's terms | n/a |
 | Request logs (IP, paths) | Hosting provider | Vercel | Operations, security | Legitimate interest (f) | Provider's log retention | Provider |
 | Error reports | Sentry (EU), when enabled | Sentry | Fixing failures | Legitimate interest (f) | Sentry project retention (set it to 30–90 days) | Sentry |
+| Sign-up invitations (private beta) | `signup_allowlist` | Supabase | Letting invited people sign up while sign-ups are restricted | Legitimate interest (f) | Until removed, or the account is deleted | `DELETE /api/account` removes the user's entry; remove others by hand once sign-ups open |
 | Theme preference | `theme` cookie | Browser only | Remember light or dark | Not personal data in practice; functional | 1 year | User (or choosing System) |
 | Sign-in session | `sb-*` cookies | Browser, Supabase | Stay signed in | Strictly necessary | Session refresh | Sign-out, account deletion |
 

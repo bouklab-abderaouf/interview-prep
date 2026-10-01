@@ -51,6 +51,15 @@ export async function DELETE() {
     return NextResponse.json({ error: "delete_failed" }, { status: 500 });
   }
 
+  // An invitation (private beta, supabase/migrations/010) is personal data
+  // too, and it isn't tied to the auth user, so the cascade can't reach it.
+  // Best effort: the account itself is already gone.
+  const email = claimsData?.claims.email;
+  if (typeof email === "string") {
+    const { error: allowlistError } = await admin.from("signup_allowlist").delete().eq("email", email.toLowerCase());
+    if (allowlistError) console.error("[api/account] allow-list cleanup failed", allowlistError.message);
+  }
+
   // The user and their refresh tokens are gone server-side; this clears the
   // now-dead session cookies from the browser.
   await supabase.auth.signOut({ scope: "local" });

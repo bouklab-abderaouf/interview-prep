@@ -9,8 +9,11 @@ import { describe, expect, it } from "vitest";
 // would silently survive account deletion: a GDPR erasure bug nobody would
 // notice. This reads the migrations and fails if that ever happens.
 
-// Tables that hold no personal data and so need no path to a user.
-const NOT_USER_DATA = new Set(["usage_counters"]);
+// Tables not owned by a user row, so they need no cascade path:
+// - usage_counters, app_settings: no personal data;
+// - signup_allowlist: invited emails from before a user exists. DELETE
+//   /api/account removes the user's entry explicitly (app/api/account).
+const NOT_USER_DATA = new Set(["usage_counters", "app_settings", "signup_allowlist"]);
 
 const dir = join(process.cwd(), "supabase", "migrations");
 const sql = readdirSync(dir)
