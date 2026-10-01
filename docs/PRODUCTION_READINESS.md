@@ -17,7 +17,7 @@ keeps this file up to date as it goes.
 | 2 | [Voice scope and edge cases](#phase-2--voice-scope-and-edge-cases) | **Code done** — red-team run left | Run the red-team script | ~5 Live sessions, 1–2 analyses |
 | 3 | [Monitoring and alerting](#phase-3--monitoring-and-alerting) | **Code done** — accounts and alerts left | Create Sentry and uptime accounts | ~1 Live session |
 | 4 | [Billing and capacity](#phase-4--billing-and-capacity) | **Code done** — your numbers and decision left | Read quota numbers; billing decision | None |
-| 5 | [GDPR / RGPD](#phase-5--gdpr--rgpd) | Not started | Legal identity, DPAs, legal review | None |
+| 5 | [GDPR / RGPD](#phase-5--gdpr--rgpd) | **Code done** — your details, DPAs, review left | Legal identity, DPAs, legal review | None |
 | 6 | [Test depth, known bugs, private beta](#phase-6--test-depth-known-bugs-private-beta) | Not started | Docker; device testing; recruit 3–5 testers | ~5–10 Live sessions |
 | 7 | [Staged launch](#phase-7--staged-launch) | Not started | Hosting account, SMTP, domain | Real traffic |
 
@@ -332,48 +332,66 @@ reviewed by someone qualified before opening sign-ups.*
 **Depends on:** Phase 4's paid-tier decision.
 
 **Tasks**
-- [ ] `docs/DATA.md`: a data inventory. For each item (email, CV PDF, JD,
+- [x] `docs/DATA.md`: a data inventory. For each item (email, CV PDF, JD,
   gap analysis, voice audio, transcripts, scorecards, XP and progress, IP
   hash, cookies), record: where it's stored, who processes it (Supabase EU,
   Google US, Cloudflare, Vercel, Sentry), the purpose, the legal basis, the
-  retention period, and how it's deleted.
+  retention period, and how it's deleted. (1e2b0bf — plus the rules that
+  keep it true, and a checklist of the DPAs.)
 - [ ] **[you]** Sign or accept the data processing agreements: Supabase
   DPA, Google (paid Gemini API terms), Vercel, Sentry, Cloudflare. Note the
   transfer mechanism for US processors (EU–US Data Privacy Framework /
-  SCCs).
-- [ ] A `/privacy` page (FR and EN) and a `/legal` page (mentions légales:
-  publisher identity and contact, host). **[you]** supply the identity
-  details. Link both from the footer, sign-in, onboarding and the demo.
-- [ ] Consent at onboarding: an explicit, unticked checkbox naming the
+  SCCs). Checklist in [DATA.md](DATA.md#processors-and-agreements-for-you-to-complete).
+- [x] A `/privacy` page (FR and EN) and a `/legal` page (mentions légales:
+  publisher identity and contact, host). Link both from the footer,
+  sign-in, onboarding and the demo. (1e2b0bf — a footer on every page,
+  including sign-in; links on the upload page, the demo's mic notice and
+  Documents.)
+  - [ ] **[you]** Fill in `NEXT_PUBLIC_LEGAL_*` (name, status, address,
+    contact email, host). Until then both pages show "[to be completed]"
+    under a draft banner.
+- [x] Consent at onboarding: an explicit, unticked checkbox naming the
   processing (AI analysis by Google, outside the EU) before a CV is
   uploaded. Store the consent timestamp and version; add a migration and a
-  test.
-- [ ] Right of access and portability: `GET /api/account/export` returns a
+  test. (1e2b0bf — migration 009, applied; the server refuses without the
+  current `CONSENT_VERSION`. The wording also covers interview audio.)
+- [x] Right of access and portability: `GET /api/account/export` returns a
   JSON of everything about the user (profile, roadmaps, stages, progress,
   sessions, turns, scorecards, document metadata, plus a signed CV URL),
   with a "Download my data" button in Documents → Your data. Route test and
-  e2e.
-- [ ] Retention: check what the upload page promises, then enforce it with
+  e2e. (1e2b0bf)
+- [x] Retention: check what the upload page promises, then enforce it with
   a scheduled job (Supabase `pg_cron` or a Vercel cron) that deletes
   expired CVs from storage and expired rows. Make it testable and log each
-  run.
-- [ ] Cookie audit: the auth cookies and the `theme` preference cookie are
+  run. (1e2b0bf — the promise is "kept until you delete it", which stands
+  for user content. What users never see now expires: demo IP hashes and
+  daily counters after 30 days, orphaned CV files daily. Runs as a Vercel
+  cron behind `CRON_SECRET`; not active until deployed.)
+  - [ ] **Decision [you]:** delete accounts after a long inactivity (e.g.
+    24 months, with a warning email first)? It needs working email (phase
+    7's SMTP). Not implemented.
+- [x] Cookie audit: the auth cookies and the `theme` preference cookie are
   strictly necessary or functional, so no banner should be needed. Document
-  that in `/privacy`, along with Turnstile's processing.
-- [ ] Voice: confirm and state precisely that audio streams to Google
+  that in `/privacy`, along with Turnstile's processing. (1e2b0bf)
+- [x] Voice: confirm and state precisely that audio streams to Google
   during a session and is never stored by the app, and that the demo
-  stores no transcript.
-- [ ] Short breach procedure in `docs/RUNBOOK.md` (CNIL notification within
-  72h, who does what).
-- [ ] Re-verify that `DELETE /api/account` removes every table added in
-  Phases 1–5.
+  stores no transcript. (1e2b0bf — confirmed in the code. The demo's
+  notice wrongly said "nothing recorded or stored" with no mention of the
+  free tier; every such notice now follows `NEXT_PUBLIC_GEMINI_TIER`.)
+- [x] Short breach procedure in `docs/RUNBOOK.md` (CNIL notification within
+  72h, who does what). (1e2b0bf)
+- [x] Re-verify that `DELETE /api/account` removes every table added in
+  Phases 1–5. (`tests/migrations.test.ts` covers every table, including
+  `user_daily_usage`; the consent fields are on `profiles`.)
 - [ ] **[you]** Legal review of `/privacy`, `/legal` and the consent text.
 
 **Done when:** the inventory is complete; the privacy and legal pages are
 live; consent is recorded; export and retention are implemented and
 tested; DPAs are signed; the review is done.
 
-**Outcome:** —
+**Outcome (2026-10-01):** every engineering task is done and tested.
+Waiting on you: the publisher details, the DPAs, the paid-tier decision
+(phase 4, a precondition), the inactivity decision, and a legal review.
 
 ---
 
