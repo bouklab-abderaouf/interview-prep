@@ -16,7 +16,7 @@ keeps this file up to date as it goes.
 | 1 | [Close the abuse holes](#phase-1--close-the-abuse-holes) | **Code done** — your live check left | 1 live session to verify the CSP | ~1 Live session |
 | 2 | [Voice scope and edge cases](#phase-2--voice-scope-and-edge-cases) | **Code done** — red-team run left | Run the red-team script | ~5 Live sessions, 1–2 analyses |
 | 3 | [Monitoring and alerting](#phase-3--monitoring-and-alerting) | **Code done** — accounts and alerts left | Create Sentry and uptime accounts | ~1 Live session |
-| 4 | [Billing and capacity](#phase-4--billing-and-capacity) | Not started | Read quota numbers; billing decision | None |
+| 4 | [Billing and capacity](#phase-4--billing-and-capacity) | **Code done** — your numbers and decision left | Read quota numbers; billing decision | None |
 | 5 | [GDPR / RGPD](#phase-5--gdpr--rgpd) | Not started | Legal identity, DPAs, legal review | None |
 | 6 | [Test depth, known bugs, private beta](#phase-6--test-depth-known-bugs-private-beta) | Not started | Docker; device testing; recruit 3–5 testers | ~5–10 Live sessions |
 | 7 | [Staged launch](#phase-7--staged-launch) | Not started | Hosting account, SMTP, domain | Real traffic |
@@ -38,6 +38,7 @@ paid tier); 1–5 before 7. Phases 2 and 3 can swap.
   `npm run check`; before finishing a phase, run `npm run test:e2e`.
 - Every change in behaviour gets a test in the layer that fits
   (TESTING.md). Security fixes get a test that fails without the fix.
+- `[~]` marks a task done provisionally, waiting on something from the user.
 - When a task is done, tick it here with its commit hash
   (`- [x] … (abc1234)`). When the phase is done, update the Status table and
   the phase's "Outcome" line, and add anything learned to AGENTS.md.
@@ -272,31 +273,53 @@ free tier, Google may use API inputs to improve its products, which
 - [ ] **[you]** From [aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit),
   paste the limits for the Live model (concurrent sessions, sessions or
   requests per day, tokens per minute) and for the text models
-  (`GEMINI_TEXT_MODEL`, `GEMINI_TEXT_FALLBACK_MODEL`: RPM and RPD).
-- [ ] Write `docs/CAPACITY.md`: the Live and text calls per demo, full
+  (`GEMINI_TEXT_MODEL`, `GEMINI_TEXT_FALLBACK_MODEL`: RPM and RPD). Put
+  them in the fill-in table in [CAPACITY.md](CAPACITY.md#capacity-fill-in-your-projects-limits).
+- [x] Write `docs/CAPACITY.md`: the Live and text calls per demo, full
   interview, drill and analysis; the resulting daily and concurrent
   capacity per tier. Fetch current pricing (ai.google.dev pricing page) and
   compute the cost per demo, interview, drill and analysis, plus the
-  monthly cost at 10, 100 and 1000 users.
-- [ ] Set `DEMO_MAX_SESSIONS_PER_DAY`, `DEMO_MAX_SESSIONS_PER_IP_PER_HOUR`
+  monthly cost at 10, 100 and 1000 users. (0af40a3 — ~$0.03 per demo,
+  ~$0.15 per interview with scoring, ~$0.06 per drill, ~$0.05 per analysis;
+  ~$185/month at 100 active users. Text prices double on 2027-01-01. The
+  token counts are estimates until measured.)
+- [~] Set `DEMO_MAX_SESSIONS_PER_DAY`, `DEMO_MAX_SESSIONS_PER_IP_PER_HOUR`
   and Phase 1's per-user limits from that doc, with headroom kept for
-  signed-in users.
-- [ ] Handle concurrency. If the Live concurrent-session limit is small, a
+  signed-in users. (0af40a3 — *provisional:* the demo default drops from
+  200 to 20 a day, since 200 was never derived from the real quota.
+  **[you]** your `.env.local` still says 200; CAPACITY.md has the formulas
+  to set the final values once the limits above are filled in.)
+- [x] Handle concurrency. If the Live concurrent-session limit is small, a
   second visitor fails mid-handshake. Detect it, show "the interviewer is
-  busy, try in a minute", and count it in monitoring.
+  busy, try in a minute", and count it in monitoring. (0af40a3 —
+  `lib/live/close-reason.ts` classifies closes as quota / busy / time
+  limit / network / server error; `kind` is tagged on the monitoring event.
+  Google doesn't document the concurrency close code, so "busy" matches
+  1013 and the wording seen so far. Check it against a real one once
+  you've seen it.)
 - [ ] **Decision [you]:** stay on the free tier (private use only) or move
-  to a paid tier (required for Phase 5 and any public sign-ups).
+  to a paid tier (required for Phase 5 and any public sign-ups). Google's
+  pricing page (2026-10-01) confirms free-tier content is used to improve
+  Google's products and paid-tier content isn't.
 - [ ] **[you]** If paid: set a Google Cloud budget and budget alert (e.g.
   50% / 90% / 100% of a monthly cap), and confirm the paid-tier data terms.
-- [ ] Make the "quota gone" paths honest: the demo already says "paused".
+- [x] Make the "quota gone" paths honest: the demo already says "paused".
   Check that full interviews, scoring and analysis each tell the user what
-  happened and when to retry. Add tests with mocked 429s.
+  happened and when to retry. Add tests with mocked 429s. (0af40a3 —
+  scoring now distinguishes 503 "overloaded, a minute" from 429 "quota,
+  later today"; a dropped interview releases the mic, saves its turns as
+  "errored" (scorable from Interviews) and says so; analysis already
+  did this. Tested with mocked 503s and 429s.)
 
 **Done when:** caps and limits are derived from documented numbers; the
 cost per interview is known; a budget alert exists if paid; the busy and
 quota-gone paths are tested.
 
-**Outcome:** —
+**Outcome (2026-10-01):** the cost per flow is known (estimated), the
+busy and quota-gone paths are honest and tested, and the demo cap is now
+conservative. Waiting on you: the AI Studio limits (then the caps get
+recomputed from CAPACITY.md), the free-or-paid decision, and a budget alert
+if paid.
 
 ---
 
