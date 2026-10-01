@@ -308,14 +308,21 @@ Fill in `.env.local`:
 - **`NEXT_PUBLIC_SUPABASE_URL`**, **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**,
   **`SUPABASE_SERVICE_ROLE_KEY`** — from your Supabase project's API
   settings. Apply the migrations in `supabase/migrations/` in order. The
-  service-role key is used for the demo's guardrails and for account
-  deletion only.
+  service-role key is used for the demo's guardrails, account deletion,
+  daily-limit refunds and the retention job only.
 - **`TURNSTILE_SECRET_KEY`**, **`NEXT_PUBLIC_TURNSTILE_SITE_KEY`** — from the
   [Cloudflare Turnstile dashboard](https://dash.cloudflare.com). Required
   for the `/demo` guardrails; without them the demo fails closed rather than
   letting traffic through unverified.
 - **`IP_HASH_SALT`** — any random string. Not from the original spec's env
   list verbatim, but required to compute `sessions.ip_hash`.
+- **Everything else** — per-user daily limits (`USER_MAX_*`), the Gemini
+  tier (`NEXT_PUBLIC_GEMINI_TIER`, which drives every notice about Google's
+  use of data), error tracking (`NEXT_PUBLIC_SENTRY_DSN`), the legal notice
+  (`NEXT_PUBLIC_LEGAL_*`), the retention job (`CRON_SECRET`) and the
+  operational switches are listed with defaults in `.env.local.example`
+  and explained in [docs/RUNBOOK.md](docs/RUNBOOK.md). Deploying:
+  [docs/LAUNCH.md](docs/LAUNCH.md).
 
 Magic links work with Supabase's default email template, with two catches
 worth knowing: the link only works **in the browser that requested it**
@@ -498,4 +505,7 @@ write a route test, and what isn't covered: [docs/TESTING.md](docs/TESTING.md).
       switch; WCAG AA contrast (unspecced)
 - [x] Phase 6 — targeted question drill mode (2-min audio drills on individual questions & CV gaps, drill HUD, dedicated DRILL_ARC, and instant STAR scoring)
 - [ ] Production readiness — abuse holes, voice scope, monitoring, capacity,
-      GDPR, deeper testing, staged launch: [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)
+      GDPR, deeper testing, staged launch: [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md).
+      The engineering for all seven phases is done; what's left needs the
+      owner's accounts, money, legal details or voice, in order, in
+      [docs/LAUNCH.md](docs/LAUNCH.md)
