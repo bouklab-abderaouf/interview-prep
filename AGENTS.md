@@ -31,7 +31,7 @@ This guide is the single operational source of truth for AI agents (and human de
 - **Phase 5 (Shipping, partly done)**: Failure cleanup, document/roadmap deletion APIs, interview status filters, interactive demo preview, AI disclosure, upload privacy notice, and `DELETE /api/account`. Still open from specs §9: demo reel, error monitoring, uptime check, three real preps.
 - **Virtual Video Interview Room**: Audio-reactive 3D avatar (WebGL) + self-camera mirror practice feed with strictly decoupled camera/mic streams.
 - **Phase 6 (Targeted Question Drill Mode)**: Rapid 2-minute drills on individual stage questions and CV gaps, dedicated `DRILL_ARC` with 1 follow-up probe, in-room drill HUD, and scaled XP scoring.
-- **Next: production readiness** — not public yet. The phased plan, with evidence and per-phase tasks, is [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md). When told "start phase N", follow that file's rules.
+- **Production readiness (2026-10-01)**: all seven phases' engineering is done — abuse holes closed (per-user daily limits, CSP, patched Next.js), voice scope rules, Sentry wiring (inert until a DSN), capacity model, GDPR (consent, export, retention, privacy/legal pages), signed-in e2e on a local Supabase, the sign-up gate for a staged launch. What's left is the user's (accounts, money, legal, live checks): [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) tracks every item, [docs/LAUNCH.md](docs/LAUNCH.md) is the step-by-step.
 - **Hardening**: Vitest unit/route/component tests, Playwright browser tests with axe scans, GitHub Actions CI (all zero-quota — `docs/TESTING.md`); interview deletion; `/interviews` rebuilt; viewer-local times; System/Light/Dark theme; sign-in page that explains failed links; WCAG AA contrast in dark mode.
 
 ---
@@ -142,6 +142,7 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **`full`-mode Live tokens always need a signed-in user**, checked before the API-key check. The stage-less smoke test is off in production unless `ENABLE_VOICE_SMOKE_TEST=1`.
 - **CSP** (`lib/security/csp.ts`, sent per request from `proxy.ts`): scripts run by nonce + `'strict-dynamic'` — never add `'unsafe-inline'`/`'unsafe-eval'` to `script-src` in production. A new external origin the browser talks to (an API, a tracker, a CDN) must be added to the policy **and** to `e2e/security.spec.ts`, or it will be blocked for real users. `CSP_REPORT_ONLY=1` is the escape hatch.
 - **Monitoring** (`lib/monitoring/`): report a new failure mode or abuse signal with `reportEvent(name, tags)` — add the name to `EVENTS` with a level, and its alert to docs/RUNBOOK.md. Tags are short codes (status, close code, limit kind), never free text. Never attach transcripts, CV text, emails or request bodies to anything sent to Sentry; `scrub.ts` is an allow-list, so a new field is dropped unless it's added there deliberately.
+- **Sign-ups (phase 7)**: a trigger on `auth.users` (migration 010) admits new users per `app_settings.signups` — `open`, `allowlist` (`signup_allowlist`) or `closed`; existing users always sign in. Supabase reports a refusal as "Database error saving new user", which `SignInForm` translates. Switching is SQL only (docs/RUNBOOK.md).
 - **Personal data (GDPR, phase 5)**: `docs/DATA.md` is the inventory and `/privacy` the public version; both read from `lib/legal.ts`. Adding, moving or keeping data longer means updating both. A new user-owned table must cascade from `auth.users` (tested), appear in `GET /api/account/export` and its test, and get a retention rule. `/api/analyze` requires consent to the current `CONSENT_VERSION`; change the wording or what goes to Google and you bump it. Notices about Google's use of data follow `NEXT_PUBLIC_GEMINI_TIER`, never hard-coded text.
 - **Input caps** live in the route that reads the input (CV 4 MB and `%PDF-` signature, JD 20k chars, turn flushes 500 × 20k chars). Keep the CV cap under Vercel's ~4.5 MB body limit.
 
@@ -200,10 +201,20 @@ interview-prep/
 │   └── worklets/
 │       └── capture-processor.js # Static AudioWorklet (downsamples to 16kHz PCM16)
 ├── supabase/
-│   └── migrations/              # 001_init to 007_scorecard_per_question
+│   └── migrations/              # 001_init … 010_signup_gate
 ├── tests/                       # Vitest setup & fake-supabase.ts (records every query)
 ├── e2e/                         # Playwright specs; fixtures.ts guards against quota-burning requests
-├── docs/TESTING.md              # What each test layer covers and how to write one
+├── e2e-auth/                    # Signed-in Playwright suite (local Supabase + fake Gemini); playwright.auth.config.ts
+├── supabase/config.toml         # Local Supabase for e2e-auth (`npx supabase start`)
+├── docs/
+│   ├── TESTING.md               # What each test layer covers and how to write one
+│   ├── PRODUCTION_READINESS.md  # The phased plan and what's left
+│   ├── LAUNCH.md                # The user's launch steps (hosting, SMTP, stages A/B/C)
+│   ├── RUNBOOK.md               # Switches, alerts, retention job, breach procedure, rollback
+│   ├── CAPACITY.md              # Cost per flow and how to derive the caps
+│   ├── DATA.md                  # Personal-data inventory and DPAs
+│   ├── voice-redteam.md         # Live script: does the interviewer stay in role?
+│   └── DEVICE_CHECKLIST.md      # Manual cross-browser/device pass
 ├── .github/workflows/ci.yml     # check + browser tests on every push/PR (no secrets)
 ├── proxy.ts                     # Next.js 16 proxy convention (session refresh & auth guard)
 └── package.json
