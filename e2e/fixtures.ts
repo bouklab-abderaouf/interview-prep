@@ -31,6 +31,12 @@ export const test = base.extend<{ forbiddenCalls: string[]; consoleErrors: strin
       await page.route("https://challenges.cloudflare.com/**", (route) =>
         route.fulfill({ status: 200, contentType: "text/javascript", body: "" }),
       );
+      // WebSockets bypass page.route: a page opening the Live socket on its
+      // own is caught here (tests that check the CSP install their own mock).
+      await page.routeWebSocket(/generativelanguage\.googleapis\.com/, (ws) => {
+        calls.push(`WebSocket ${ws.url()}`);
+        ws.close();
+      });
       await use(calls);
       expect(calls, "the page made a request it must never make").toEqual([]);
     },

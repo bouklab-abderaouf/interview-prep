@@ -40,7 +40,8 @@ export function ThemeToggle({ initial }: { initial: ThemePreference }) {
     setOpen(false);
   };
 
-  const Current = OPTIONS.find((o) => o.value === preference)!.Icon;
+  // Falls back to System if a stale render passes something unexpected.
+  const Current = (OPTIONS.find((o) => o.value === preference) ?? OPTIONS[0]).Icon;
 
   return (
     <div ref={rootRef} className="relative">
