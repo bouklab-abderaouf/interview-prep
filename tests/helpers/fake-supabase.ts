@@ -91,17 +91,13 @@ export function fakeSupabase({
   // rpc("fn", args) is recorded as { table: "rpc:fn", action: "rpc", payload: args }.
   const rpc = (fn: string, args: Record<string, unknown> = {}) => {
     const op: Op = { table: `rpc:${fn}`, action: "rpc", filters: [], payload: args };
-    return {
-      then<T>(resolve: (value: Required<Result>) => T, reject?: (reason: unknown) => T) {
-        ops.push(op);
-        const result = respond(op) ?? {};
-        return Promise.resolve({
-          data: result.data ?? null,
-          error: result.error ?? null,
-          count: result.count ?? null,
-        }).then(resolve, reject);
-      },
-    };
+    ops.push(op);
+    const result = respond(op) ?? {};
+    return Promise.resolve({
+      data: result.data ?? null,
+      error: result.error ?? null,
+      count: result.count ?? null,
+    });
   };
 
   // storage.from(bucket).upload/remove/list/createSignedUrl is recorded as
