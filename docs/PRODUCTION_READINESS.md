@@ -19,7 +19,7 @@ keeps this file up to date as it goes.
 | 4 | [Billing and capacity](#phase-4--billing-and-capacity) | **Code done** — your numbers and decision left | Read quota numbers; billing decision | None |
 | 5 | [GDPR / RGPD](#phase-5--gdpr--rgpd) | **Code done** — your details, DPAs, review left | Legal identity, DPAs, legal review | None |
 | 6 | [Test depth, known bugs, private beta](#phase-6--test-depth-known-bugs-private-beta) | **Code done** — first CI run, device pass, beta left | Docker; device testing; recruit 3–5 testers | ~5–10 Live sessions |
-| 7 | [Staged launch](#phase-7--staged-launch) | Not started | Hosting account, SMTP, domain | Real traffic |
+| 7 | [Staged launch](#phase-7--staged-launch) | **Code done** — PR merge and launch steps are yours | Hosting account, SMTP, domain | Real traffic |
 
 Order matters: 1 before anything is public; 4 before 5 (GDPR depends on the
 paid tier); 1–5 before 7. Phases 2 and 3 can swap.
@@ -468,29 +468,43 @@ beta.
 **Goal:** go public in steps that can each be rolled back.
 
 **Tasks**
-- [ ] Merge the work branch to `main` through a PR; CI green.
+- [~] Merge the work branch to `main` through a PR; CI green.
+  (`ship/phase-5-remaining` is pushed and CI runs on every branch push now;
+  results below. The GitHub CLI isn't installed here and opening a PR needs
+  your GitHub login, so:)
+  - [ ] **[you]** Open the PR —
+    <https://github.com/bouklab-abderaouf/interview-prep/compare/main...ship/phase-5-remaining?expand=1> —
+    and merge once CI is green.
 - [ ] **[you]** Hosting (Vercel recommended): project, env vars (no
-  placeholders), and a preview environment for testing.
+  placeholders), and a preview environment for testing. Step by step in
+  [LAUNCH.md](LAUNCH.md#1-hosting-vercel), including the three env vars that
+  must never be set in production.
 - [ ] **[you]** Custom SMTP in Supabase (the built-in sender is slow and
   rate-limited), then switch the Magic Link and Confirm Signup templates to
   `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email` so links work
-  in any browser.
+  in any browser. ([LAUNCH.md](LAUNCH.md#2-email-custom-smtp))
 - [ ] **[you]** Supabase Auth URL configuration: production Site URL and
-  redirect allow-list.
-- [ ] **Stage A, private:** deployed, sign-ups restricted to an allow-list
-  (Supabase hook, or invite only). Monitoring from Phase 3 live. Run a
-  week.
-- [ ] **Stage B, public demo only:** the landing page and `/demo` open,
-  sign-ups still closed. Watch the guardrail alerts and capacity for a
-  week.
-- [ ] **Stage C, open sign-ups:** only once Phase 5 is done.
-- [ ] Leftover spec §9 items: replace the sample-scorecard fixture with a
-  real scorecard (you decide what of the transcript to publish), record
-  the 45-second demo reel, and write up the three real preps (the
+  redirect allow-list. ([LAUNCH.md](LAUNCH.md#3-supabase-settings))
+- [x] Sign-up restriction for the stages. (91fdc80 — migration 010, a
+  trigger on `auth.users` with `open` / `allowlist` / `closed` modes,
+  applied and checked in a rolled-back block; default `open`; existing
+  users always sign in; a clear message on the sign-in page; account
+  deletion removes the invitation.)
+- [ ] **[you] Stage A, private:** deployed, sign-ups on the allow-list.
+  Monitoring from Phase 3 live. Run a week. (SQL in [LAUNCH.md](LAUNCH.md#4-stage-a--private))
+- [ ] **[you] Stage B, public demo only:** the landing page and `/demo` open,
+  sign-ups closed. Watch the guardrail alerts and capacity for a week.
+- [ ] **[you] Stage C, open sign-ups:** only once Phase 5 is done.
+- [ ] **[you]** Leftover spec §9 items: replace the sample-scorecard fixture
+  with a real scorecard (you decide what of the transcript to publish),
+  record the 45-second demo reel, and write up the three real preps (the
   Hymaïa and Celad roadmaps count).
-- [ ] Rollback plan in RUNBOOK.md: the kill switch, re-closing sign-ups,
-  reverting a deploy.
+- [x] Rollback plan in RUNBOOK.md: the kill switch, re-closing sign-ups,
+  reverting a deploy. (91fdc80 — from feature switches up to promoting the
+  last good deploy and forward-only migrations.)
 
 **Done when:** Stage C is live, monitored, and has a written rollback.
 
-**Outcome:** —
+**Outcome (2026-10-01):** the engineering is done: the sign-up gate, the
+rollback plan, a launch checklist, and the branch pushed with CI running on
+it. Everything left is yours, in order, in [LAUNCH.md](LAUNCH.md).
