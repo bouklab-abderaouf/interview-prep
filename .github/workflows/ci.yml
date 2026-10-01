@@ -47,3 +47,31 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  e2e-auth:
+    name: Signed-in browser tests
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_CLI: supabase
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # A throwaway local Supabase in Docker, with supabase/migrations applied.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: supabase start
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:auth
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-auth
+          path: |
+            playwright-report-auth/
+            test-results-auth/
+          retention-days: 7
