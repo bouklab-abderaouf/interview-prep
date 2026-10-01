@@ -18,7 +18,7 @@ keeps this file up to date as it goes.
 | 3 | [Monitoring and alerting](#phase-3--monitoring-and-alerting) | **Code done** — accounts and alerts left | Create Sentry and uptime accounts | ~1 Live session |
 | 4 | [Billing and capacity](#phase-4--billing-and-capacity) | **Code done** — your numbers and decision left | Read quota numbers; billing decision | None |
 | 5 | [GDPR / RGPD](#phase-5--gdpr--rgpd) | **Code done** — your details, DPAs, review left | Legal identity, DPAs, legal review | None |
-| 6 | [Test depth, known bugs, private beta](#phase-6--test-depth-known-bugs-private-beta) | Not started | Docker; device testing; recruit 3–5 testers | ~5–10 Live sessions |
+| 6 | [Test depth, known bugs, private beta](#phase-6--test-depth-known-bugs-private-beta) | **Code done** — first CI run, device pass, beta left | Docker; device testing; recruit 3–5 testers | ~5–10 Live sessions |
 | 7 | [Staged launch](#phase-7--staged-launch) | Not started | Hosting account, SMTP, domain | Real traffic |
 
 Order matters: 1 before anything is public; 4 before 5 (GDPR depends on the
@@ -38,7 +38,8 @@ paid tier); 1–5 before 7. Phases 2 and 3 can swap.
   `npm run check`; before finishing a phase, run `npm run test:e2e`.
 - Every change in behaviour gets a test in the layer that fits
   (TESTING.md). Security fixes get a test that fails without the fix.
-- `[~]` marks a task done provisionally, waiting on something from the user.
+- `[~]` marks a task done provisionally, waiting on something from the user;
+  `[-]` marks an optional task deliberately skipped, with the reason.
 - When a task is done, tick it here with its commit hash
   (`- [x] … (abc1234)`). When the phase is done, update the Status table and
   the phase's "Outcome" line, and add anything learned to AGENTS.md.
@@ -401,31 +402,51 @@ Waiting on you: the publisher details, the DPAs, the paid-tier decision
 real devices, real people) before strangers do.
 
 **Tasks**
-- [ ] Local Supabase (`supabase start`, Docker) with the migrations and a
+- [x] Local Supabase (`supabase start`, Docker) with the migrations and a
   seeded test user, so Playwright can sign in (e.g. a session cookie from
   the local admin API). Local only, never against the real project.
-- [ ] A test-only fake Gemini (`GEMINI_FAKE=1`, honoured only when
-  `NODE_ENV !== "production"`, with a test proving prod ignores it) that
-  returns fixtures for analysis and scoring.
-- [ ] Signed-in e2e: onboarding → roadmap → start a stage (session row) →
+  (6ce1f0f — `supabase/config.toml` (only Postgres, API, auth, storage);
+  users are created per test and sign in through `/auth/confirm` with a
+  token hash, as a magic link would. The config refuses a non-local
+  Supabase.)
+- [x] A test-only fake Gemini (`GEMINI_FAKE=1`, with a test proving prod
+  ignores it) that returns fixtures for analysis and scoring. (ed343d4 —
+  the guard is stronger than `NODE_ENV`, which is `production` in the e2e
+  build too: it also requires Supabase on this machine, which a real
+  deployment never is.)
+- [~] Signed-in e2e: onboarding → roadmap → start a stage (session row) →
   score with the fake → scorecard → interviews (filter, delete, clear) →
   documents → export (Phase 5) → account deletion. Run it in CI.
-- [ ] Fix the **empty-session root cause**: create the session row when the
-  call starts, not when the room opens. This touches `StartStageButton`,
-  `DrillButton`, `RecommendedDrillsCard`, `/session/[id]` and the token
-  route. Signed-in e2e guards it; **[you] [quota]** one live session to
-  confirm.
-- [ ] **Decision [you]:** the font. Every page renders in Arial because
-  `app/globals.css` overrides the Geist font that's loaded. Recommended:
-  remove the override.
-- [ ] `docs/DEVICE_CHECKLIST.md`: Chrome, Edge, Firefox, Safari on macOS,
+  (6ce1f0f — `e2e-auth/`, `npm run test:e2e:auth`, plus a CI job that
+  starts a local Supabase on the runner. *Not yet run anywhere:* Docker
+  Desktop fails to start on this machine ("initializing Inference manager
+  … dockerInference: The file cannot be accessed by the system"). The
+  first CI run (phase 7's pull request) is its first real run; fix
+  anything it finds there.)
+  - [ ] **[you]** Optional, for running it locally: fix Docker Desktop (its
+    error dialog offers a factory reset, which wipes Docker's data — try
+    restarting Windows first), then `npx supabase start` and
+    `npm run test:e2e:auth`.
+- [x] Fix the **empty-session root cause**: create the session row when the
+  call starts, not when the room opens. (ed343d4 — Start and Drill open
+  `/session/new?…`; the room creates the row after the mic is granted,
+  swaps the URL in place, and deletes the row again if the call never
+  starts. Covered by the signed-in suite.)
+  - [ ] **[you] [quota]** One live session to confirm: the session should
+    appear under Interviews only once you press Start.
+- [x] **Decision [you]:** the font. *Took the recommended default:*
+  removed the Arial override, so Geist is used everywhere. (e5ac03e)
+- [x] `docs/DEVICE_CHECKLIST.md`: Chrome, Edge, Firefox, Safari on macOS,
   Safari on iOS (AudioWorklet and echo cancellation are the usual
   suspects), Chrome on Android; speakers vs headphones vs Bluetooth; mic
   denied, revoked mid-session, or a device switched; the tab in the
-  background; a network drop mid-session; a slow 3G profile.
+  background; a network drop mid-session; a slow 3G profile. (6ce1f0f)
 - [ ] **[you] [quota]** Run the device checklist. File each failure as a
   task here.
-- [ ] Optional: Playwright screenshot tests for key public pages in both
+- [-] Optional: Playwright screenshot tests for key public pages in both
+  themes. *Skipped:* screenshots taken on Windows don't match Linux CI's
+  font rendering, so they'd need per-platform baselines and would mostly
+  produce noise. The axe scans and functional tests already cover both
   themes.
 - [ ] **[you]** Private beta: 3–5 people, a short feedback form, a week of
   use. Triage everything into this file.
@@ -434,7 +455,11 @@ real devices, real people) before strangers do.
 live; the device checklist is run; beta feedback is triaged and the
 blocking bugs are fixed.
 
-**Outcome:** —
+**Outcome (2026-10-01):** the empty-session bug is fixed at its cause,
+the font is fixed, the fake Gemini and local-Supabase setup are in, and the
+signed-in suite is written and wired into CI. Waiting on: its first CI run,
+your live check of the session fix, the device checklist, and the private
+beta.
 
 ---
 

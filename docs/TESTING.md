@@ -11,6 +11,7 @@ Live session is scarcer still (see AGENTS.md §2).
 | `npm run test` | unit + component tests (Vitest) | ~5 s |
 | `npm run test:watch` | the same, re-running on save | — |
 | `npm run test:e2e` | browser tests (Playwright) against a fresh production build | ~1.5 min |
+| `npm run test:e2e:auth` | signed-in browser tests against a local Supabase (`npx supabase start` first, needs Docker) | ~2 min |
 
 Run `npm run check` before every commit and `npm run test:e2e` before
 pushing. CI (`.github/workflows/ci.yml`) runs both on every push to `main`
@@ -92,10 +93,20 @@ switch, and axe WCAG 2.1 AA scans of every public page in both themes
 
 ### What isn't covered, and why
 
-- **Signed-in pages in a real browser.** Signing in needs a real Supabase
-  project and a real inbox. They are covered by component tests instead.
-  If a local Supabase (`supabase start`) is ever added, a seeded test user
-  would close this gap.
+- **Signed-in pages against the real project.** They run against a local
+  Supabase instead (below), with the same migrations. The real project is
+  never used by any test.
+
+## 5. Signed-in browser tests — `e2e-auth/*.spec.ts`
+
+Playwright against a production build on port 3200, pointed at a **local**
+Supabase (`npx supabase start`; `supabase/config.toml`), with Gemini's text
+calls faked by `lib/gemini/fake.ts` (it only switches on when Supabase is
+local). Each test creates its own user with the local admin API and signs
+in through `/auth/confirm` with a token hash, as a magic link would.
+`playwright.auth.config.ts` refuses to run against a non-local Supabase.
+The Live API can't be faked, so these stop short of a real call (the room
+test intercepts the token request). CI runs them in their own job.
 - **Anything that talks to Gemini.** Live sessions, gap analysis and scoring
   are verified by hand, deliberately and rarely. See AGENTS.md §2.
 
