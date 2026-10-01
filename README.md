@@ -50,6 +50,15 @@ before every session, the upload-page privacy notice, and full account
 deletion. Still open from specs §9: the demo reel, error monitoring, an uptime
 check, and the three real interview preps — see [Roadmap](#roadmap).
 
+**Hardening** (unspecced, like Navigation). The repo had no tests at all; it
+now has unit, route-handler, component and browser tests plus CI, all at
+zero API quota — see [Testing](#testing). Alongside: interviews can be
+deleted (one at a time, or every empty session at once), `/interviews` was
+rebuilt around what actually happened in each session, times show in the
+viewer's own time zone instead of UTC, there's a System / Light / Dark
+switch, a sign-in page that explains failed links, and dark-mode text
+contrast now meets WCAG AA.
+
 ## What's here right now
 
 - **A real-time voice interview.** Browser mic → Gemini Live (native
@@ -96,8 +105,17 @@ check, and the three real interview preps — see [Roadmap](#roadmap).
   scores, and a document list with signed links to the CVs you uploaded.
 - **Your data, deletable.** The upload page says what happens to a CV, how
   long it's kept and how to delete it; roadmaps (with their interviews and
-  documents) can be deleted from Home or the roadmap page, and
-  `/documents` deletes the whole account.
+  documents) can be deleted from Home or the roadmap page, single interviews
+  from `/interviews`, and `/documents` deletes the whole account.
+- **An interview history that tells you something.** `/interviews` leads
+  with your latest score, the change since the previous interview, a trend
+  line, your best score and time practised; then every session grouped by
+  day, filterable by state and roadmap, each labelled by what happened
+  (scored, needs scoring, in progress, not started) rather than by a status
+  column that said "Active" for weeks.
+- **Light and dark.** System / Light / Dark from the header, remembered per
+  browser and rendered by the server, so there's no flash of the wrong
+  theme.
 - **AI disclosure.** Both the demo and the interview room say "You'll be
   speaking with an AI interviewer, not a person" before a session starts, the
   interviewer tile carries a permanent AI label, and the prompt forbids the
@@ -257,6 +275,11 @@ check, and the three real interview preps — see [Roadmap](#roadmap).
 | Question-bank arc | Encoded as array order, not a `phase` field per question | `GapAnalysis` already sits at Gemini's undocumented structured-output complexity budget; another field risks re-triggering the 400 |
 | Drill scoring | XP and streak only, no `progress` write | A single-question drill isn't evidence about a whole stage, and letting it unlock one bypassed the interview the tree gates |
 | Account deletion | Delete the auth user and let FKs cascade, storage cleared first | One source of truth for "what belongs to a user"; storage is the only thing the cascade can't reach |
+| Deleting an interview | Removes the transcript and scorecard; XP and stage progress stay | Recomputing them from what's left would let a deletion re-lock a stage mid-roadmap |
+| "Is this session in progress?" | Active *and* under 30 minutes old with nothing recorded | The row is created when the room opens, so status alone left idle visits "Active" forever |
+| Displayed times | UTC on the server, the viewer's zone after hydration (`<LocalTime>`) | The server can't know the zone; rendering local time there breaks hydration, rendering UTC everywhere showed 20:10 as 18:10 |
+| Theme storage | Cookie, read by the root layout | The server renders `<html class="dark">` itself: no inline script, no flash, no hydration mismatch |
+| Browser tests | Production build with placeholder credentials; Gemini routes fail the test | Tests must never spend quota or touch real data, by construction rather than by care |
 
 ## Setup
 
@@ -294,10 +317,19 @@ Fill in `.env.local`:
 - **`IP_HASH_SALT`** — any random string. Not from the original spec's env
   list verbatim, but required to compute `sessions.ip_hash`.
 
-One manual dashboard step `.env` can't cover: in Supabase, under
-**Auth → Emails → Magic Link**, change the confirmation link to
-`{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email` so it
-matches `app/auth/confirm/route.ts`.
+Magic links work with Supabase's default email template, with two catches
+worth knowing: the link only works **in the browser that requested it**
+(PKCE keeps a verifier cookie there), and only the most recent link works.
+If the request errors in the browser — even when Supabase did send the email
+— supabase-js deletes that verifier and the email's link can't be used.
+`/sign-in` explains each of these when it happens.
+
+To make links work in any browser or device, switch the Magic Link and
+Confirm Signup templates to
+`{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email` —
+`app/auth/confirm/route.ts` already handles that shape. Supabase only lets
+you edit templates once **custom SMTP** is configured (Authentication →
+Emails), which also lifts the built-in sender's low hourly limit.
 
 ```bash
 npm run dev
@@ -313,10 +345,13 @@ npm run dev
   permission, a 2-minute countdown.
 - `/sign-in` → `/home` — sign in with a magic link. First-time users are
   forwarded to `/onboarding` to upload a CV and paste a job description.
+  A failed link comes back here with the reason (`?error=browser|expired|link`).
 - `/home` — the hub: XP and streak, your roadmaps with per-stage progress,
-  and your five most recent interviews.
-- `/interviews` — every session you've run, scored or not, with duration,
-  turn count and score. Scored rows open their scorecard.
+  and your five most recent scored interviews.
+- `/interviews` — a progress summary, then every session you've started,
+  grouped by day and filterable by state and roadmap. Scored rows open their
+  scorecard, unscored ones with answers can be scored, and any of them can be
+  deleted — empty ones all at once.
 - `/documents` — the CVs and job descriptions behind each roadmap. CVs get a
   one-hour signed URL; the `cvs` bucket is private. The "Your data" section
   at the bottom deletes the account.
@@ -324,6 +359,19 @@ npm run dev
   and the Start button that creates a session and drops you into the
   interview room.
 - `/sample-scorecard` — the scorecard UI on a fixture, no auth needed.
+
+## Testing
+
+```bash
+npm run check      # typecheck + lint + unit/component tests (~15s)
+npm run test:e2e   # browser tests against a fresh production build (~1.5 min)
+```
+
+None of it spends Gemini quota or touches the real Supabase project: unit
+and route tests use fakes, and the browser tests build the app with
+placeholder credentials and fail if a page so much as requests a token. CI
+runs both on every push and pull request. What each layer covers, how to
+write a route test, and what isn't covered: [docs/TESTING.md](docs/TESTING.md).
 
 ## Known gaps and risks
 
@@ -410,9 +458,17 @@ npm run dev
   own, which covers the symptom (verified: it now opens with a proper
   introduction against that exact bank), but the stored data is still wrong
   and a re-analysis is the real fix.
-- **The interview history has no pagination.** It filters by status now, but
-  every session is still fetched and rendered in one list. Fine at five
-  sessions; not at five hundred.
+- **The interview history has no pagination.** It filters and groups now, but
+  every session is still fetched and rendered at once. Fine at fifty
+  sessions; not at five thousand.
+- **Opening the interview room creates a session, even if you never start.**
+  That's where the empty "not started" rows come from. `/interviews` labels
+  them honestly and clears them in one click, but the real fix is to create
+  the row when the call starts.
+- **Signed-in pages have no browser tests.** Signing in needs the real
+  Supabase project and a real inbox, so the signed-in UI is covered by
+  component tests instead. A local Supabase with a seeded user would close
+  this gap.
 - **There is no demo reel.** The landing page has an interactive preview and
   a repository link, but the 45-second reel specs §5.1 and §9 put at the top
   of it hasn't been recorded.
@@ -437,4 +493,7 @@ npm run dev
   - [ ] Error monitoring with the Live session error path covered
   - [ ] Uptime check on `/api/demo/status`
   - [ ] Use it for three real interview preps and write up the outcome
+- [x] Hardening — unit, route, component and browser tests with CI;
+      interview deletion; `/interviews` rebuilt; local times; light/dark
+      switch; WCAG AA contrast (unspecced)
 - [x] Phase 6 — targeted question drill mode (2-min audio drills on individual questions & CV gaps, drill HUD, dedicated DRILL_ARC, and instant STAR scoring)

@@ -31,6 +31,7 @@ This guide is the single operational source of truth for AI agents (and human de
 - **Phase 5 (Shipping, partly done)**: Failure cleanup, document/roadmap deletion APIs, interview status filters, interactive demo preview, AI disclosure, upload privacy notice, and `DELETE /api/account`. Still open from specs §9: demo reel, error monitoring, uptime check, three real preps.
 - **Virtual Video Interview Room**: Audio-reactive 3D avatar (WebGL) + self-camera mirror practice feed with strictly decoupled camera/mic streams.
 - **Phase 6 (Targeted Question Drill Mode)**: Rapid 2-minute drills on individual stage questions and CV gaps, dedicated `DRILL_ARC` with 1 follow-up probe, in-room drill HUD, and scaled XP scoring.
+- **Hardening**: Vitest unit/route/component tests, Playwright browser tests with axe scans, GitHub Actions CI (all zero-quota — `docs/TESTING.md`); interview deletion; `/interviews` rebuilt; viewer-local times; System/Light/Dark theme; sign-in page that explains failed links; WCAG AA contrast in dark mode.
 
 ---
 
@@ -48,7 +49,8 @@ The project operates under strict Gemini API constraints on the free tier:
 - **NEVER perform speculative Live API sessions or text calls**: Every test that connects to Gemini Live or calls `/api/sessions/[id]/score` or `/api/analyze` spends scarce daily quota.
 - **Do NOT automate UI clicks on quota-burning buttons**: Never click "Start" in the interview room, "Score it", or submit onboarding forms in browser sessions without explicit user approval.
 - **Verify offline first**:
-  - Use `npx tsc --noEmit` and `npm run lint` for static correctness.
+  - Run `npm run check` (typecheck + lint + unit/component tests) — zero quota, ~15s.
+  - Run `npm run test:e2e` for the browser suite — it builds with placeholder credentials and fails any test whose page requests `/api/live/token`, `/api/analyze`, a `/score` route or Gemini.
   - Inspect PostgreSQL state directly (read queries via Supabase client or CLI).
   - Use fixtures (`lib/fixtures/`) and mock data for UI testing.
   - Review network logs and error logs before re-attempting failed requests.
@@ -126,6 +128,13 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 ### H. AI Disclosure & User Data
 - **AI Disclosure (specs §9, EU AI Act Art. 50)**: Every entry point to a Live session must say the candidate is speaking with an AI *before* the session starts — `MicPermissionGate` for `/demo`, the idle banner in `InterviewRoom` for `/session/[id]`. The interviewer tile keeps a permanent "AI" label, and `AI_DISCLOSURE` in `lib/prompts/interviewer.ts` forbids the persona from claiming to be human. A new session entry point needs the same notice.
 - **Account Deletion (`app/api/account/route.ts`)**: Every user-owned table cascades from `auth.users`, so deleting the auth user removes all rows. Storage has no cascade: the user's `cvs/{userId}/` folder is emptied first, and if that fails the account is left intact. A new user-owned table must reference `auth.users` (directly or through a parent) `on delete cascade`; a new storage bucket must be cleared in this route.
+- **Interview Deletion (`DELETE /api/sessions/[id]`, bulk `DELETE /api/sessions`)**: Scoped by RLS *and* an explicit `user_id` filter. Turns and the scorecard cascade; `profiles` XP and `progress` are left alone on purpose — recomputing them from what's left would let a deletion re-lock a stage.
+
+### I. Time, Theme & Session State Display
+- **Displayed times go through `<LocalTime>`** (`components/ui/LocalTime.tsx`), or `formatInstant(iso, style, timeZone)` with `useHydrated()` inside client components. They render UTC on the server and during hydration, then the viewer's zone. Never format a user-facing time in the server's zone or in plain UTC — UTC showed a 20:10 Paris interview as 18:10.
+- **Theme** (`lib/theme.ts`): the choice is a `theme` cookie read by the root layout, which renders `class="light|dark"` on `<html>`; no class means follow the system. The `dark` variant in `app/globals.css` encodes that, so plain `dark:` utilities just work. Don't add an inline theme script or localStorage theme state.
+- **Grey text needs a dark pair**: `text-zinc-500` alone is 4.1:1 on the dark background (fails WCAG AA). Write `text-zinc-500 dark:text-zinc-400`. The axe scans in `e2e/` fail the run on serious contrast violations.
+- **Session state comes from what happened, not `sessions.status`** (`lib/interviews.ts`): a row is created when the interview room opens, so "active" with no turns and older than 30 minutes is "not started", not in progress.
 
 ---
 
@@ -143,7 +152,7 @@ interview-prep/
 │   │   ├── scorecard/[id]/      # Detailed scorecard (STAR, metrics, quotes, model answers)
 │   │   ├── session/[id]/        # Live voice interview room (or Phase 0 connectivity test)
 │   │   └── layout.tsx           # App shell wrapping authenticated pages with AppNav
-│   ├── (marketing)/             # Public landing page & /sample-scorecard
+│   ├── (marketing)/             # Public landing page, /sample-scorecard, /demo, /sign-in
 │   ├── api/
 │   │   ├── account/             # DELETE: full account deletion (storage, then auth user)
 │   │   ├── analyze/             # Gap analysis & roadmap generator (PDF CV + text JD)
@@ -151,20 +160,19 @@ interview-prep/
 │   │   ├── documents/[id]/      # DELETE: unlinked document (+ stored CV)
 │   │   ├── live/token/          # Ephemeral token minter for authenticated interviews
 │   │   ├── roadmaps/[id]/       # DELETE: roadmap, its sessions, and unshared documents
-│   │   ├── sessions/            # POST: create a full or drill session for an unlocked stage
-│   │   └── sessions/[id]/       # Turn flushing (PATCH) & session scoring (POST /score)
+│   │   ├── sessions/            # POST: create a full or drill session; DELETE: bulk delete ({ ids })
+│   │   └── sessions/[id]/       # Turn flushing (PATCH), DELETE, & session scoring (POST /score)
 │   ├── auth/                    # Magic-link confirm (/auth/confirm) and sign-out
-│   ├── demo/                    # Public 2-minute guarded interview demo
-│   ├── sign-in/                 # Passwordless email sign-in screen
-│   ├── layout.tsx               # Root HTML layout & fonts
+│   ├── layout.tsx               # Root HTML layout, fonts & server-rendered theme class
 │   └── globals.css              # Tailwind CSS imports & global design tokens
 ├── components/
-│   ├── interview/               # Audio visualizer, timer, transcript feed, ScoreSessionButton
+│   ├── auth/                    # SignInForm, link-errors (why a magic link failed)
+│   ├── interview/               # Interview room, history list & stats, ScoreSessionButton
 │   ├── nav/                     # AppNav header and BackLink component
 │   ├── onboarding/              # File dropzone & JD text area
 │   ├── roadmap/                 # SkillTree, StageNode, StartStageButton, XpBar
 │   ├── scorecard/               # Pass meter, score bars, per-question, delivery, transcript
-│   └── ui/                      # Shared buttons, dialogs, badges
+│   └── ui/                      # LocalTime, ThemeToggle, delete buttons
 ├── lib/
 │   ├── audio/                   # mic.ts, recorder.ts, player.ts, resample.ts
 │   ├── fixtures/                # Demo scenario and sample scorecard fixtures
@@ -174,12 +182,20 @@ interview-prep/
 │   ├── metrics/                 # deterministic.ts (WPM, pauses, filler words), filler-words.ts
 │   ├── prompts/                 # interviewer.ts, gap-analysis.ts, scoring.ts
 │   ├── supabase/                # server.ts, client.ts, admin.ts, proxy.ts
-│   └── format.ts                # UTC date/time & duration formatters for SSR
+│   ├── hooks/use-hydrated.ts    # false during SSR/hydration, true after
+│   ├── format.ts                # formatInstant (zone-aware), duration formatters
+│   ├── interviews.ts            # Session state, history stats, day grouping (pure)
+│   ├── progression.ts           # XP, stars, streaks (pure; clock is a parameter)
+│   └── theme.ts / theme-server.ts # Theme cookie parsing & server read
 ├── public/
 │   └── worklets/
 │       └── capture-processor.js # Static AudioWorklet (downsamples to 16kHz PCM16)
 ├── supabase/
 │   └── migrations/              # 001_init to 007_scorecard_per_question
+├── tests/                       # Vitest setup & fake-supabase.ts (records every query)
+├── e2e/                         # Playwright specs; fixtures.ts guards against quota-burning requests
+├── docs/TESTING.md              # What each test layer covers and how to write one
+├── .github/workflows/ci.yml     # check + browser tests on every push/PR (no secrets)
 ├── proxy.ts                     # Next.js 16 proxy convention (session refresh & auth guard)
 └── package.json
 ```
@@ -193,11 +209,15 @@ interview-prep/
 # Run local dev server
 npm run dev
 
-# Static type checking (Zero quota cost - run often!)
-npx tsc --noEmit
+# Typecheck + lint + unit/component tests (zero quota, ~15s — run often!)
+npm run check
 
-# Linting
-npm run lint
+# Unit/component tests only, or on every save
+npm run test
+npm run test:watch
+
+# Browser tests against an isolated production build (zero quota, ~1.5 min)
+npm run test:e2e
 
 # Production build check
 npm run build
@@ -217,4 +237,8 @@ npm run build
 4. **Did you add a page or route?**
    - Ensure explicit back navigation exists.
    - Add the route to `AppNav` if it belongs in the top-level user shell.
-   - Ensure server components format dates using `lib/format.ts` (fixed UTC) to prevent hydration mismatches.
+   - Show times with `<LocalTime>` (UTC on the server, the viewer's zone after hydration), never in the server's zone.
+   - Pair every `text-zinc-500` with `dark:text-zinc-400`, and give the page an `<h1>`.
+5. **Did you add or change logic?**
+   - Add a test in the layer that fits (`docs/TESTING.md`): pure logic in `lib/**/*.test.ts`, route handlers against `tests/helpers/fake-supabase.ts`, UI with Testing Library, signed-out flows in `e2e/`.
+   - `npm run check` passes; run `npm run test:e2e` before pushing.
