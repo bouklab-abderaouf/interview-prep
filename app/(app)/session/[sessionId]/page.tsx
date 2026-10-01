@@ -43,7 +43,13 @@ export default function SessionPage({
 }: {
   params: Promise<{ sessionId: string }>;
 }) {
-  const { sessionId } = use(params);
+  const { sessionId: routeSessionId } = use(params);
+  // `/session/new?stageId=…` has no row yet: it's created when the call
+  // starts. Opening the room and leaving used to leave an "active" session
+  // behind forever (production readiness phase 6). The id lives in a ref too,
+  // so callbacks set up during the call (flushes, scoring) see it.
+  const [sessionId, setSessionId] = useState<string | null>(routeSessionId === "new" ? null : routeSessionId);
+  const sessionIdRef = useRef<string | null>(sessionId);
   const searchParams = useSearchParams();
   const stageId = searchParams.get("stageId");
   const isRealSession = Boolean(stageId);
@@ -108,18 +114,24 @@ export default function SessionPage({
           question_bank: Array<{ text: string; targets: string }> | null;
         }>();
 
-      const { data: sessionRow } = await supabase
-        .from("sessions")
-        .select("usage")
-        .eq("id", sessionId)
-        .maybeSingle<{
-          usage: {
-            drill?: boolean;
-            targetQuestion?: string | null;
-            targets?: string | null;
-            questionIndex?: number;
-          } | null;
-        }>();
+      // A new room has no row yet; the drill details come from the URL.
+      const sessionRow =
+        routeSessionId === "new"
+          ? null
+          : (
+              await supabase
+                .from("sessions")
+                .select("usage")
+                .eq("id", routeSessionId)
+                .maybeSingle<{
+                  usage: {
+                    drill?: boolean;
+                    targetQuestion?: string | null;
+                    targets?: string | null;
+                    questionIndex?: number;
+                  } | null;
+                }>()
+            ).data;
 
       const isDrill = Boolean(sessionRow?.usage?.drill || isDrillParam);
       const qIndex = sessionRow?.usage?.questionIndex ?? parsedQIndex;
@@ -155,7 +167,7 @@ export default function SessionPage({
       }
     }
     void loadStage();
-  }, [stageId, sessionId, isDrillParam, parsedQIndex]);
+  }, [stageId, routeSessionId, isDrillParam, parsedQIndex]);
 
   const sessionRef = useRef<Session | null>(null);
   const recorderRef = useRef<AudioRecorderHandle | null>(null);
@@ -232,9 +244,10 @@ export default function SessionPage({
 
   const flushTurns = useCallback(
     async (status?: "completed" | "abandoned" | "errored", keepalive = false) => {
-      if (!isRealSession) return;
+      const id = sessionIdRef.current;
+      if (!isRealSession || !id) return;
       try {
-        const res = await fetch(`/api/sessions/${sessionId}`, {
+        const res = await fetch(`/api/sessions/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -249,7 +262,7 @@ export default function SessionPage({
         reportEvent("session.flush_failed", { status: "network" });
       }
     },
-    [isRealSession, sessionId, sinceStart],
+    [isRealSession, sinceStart],
   );
 
   // beforeunload can't await a normal fetch, but `keepalive: true` lets the
@@ -299,7 +312,7 @@ export default function SessionPage({
       setStatus("scoring");
       await flushTurns("completed");
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/score`, { method: "POST" });
+        const res = await fetch(`/api/sessions/${sessionIdRef.current}/score`, { method: "POST" });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
           const refusal = describeLimitRefusal(body);
@@ -309,7 +322,7 @@ export default function SessionPage({
               : `Your interview was saved, but scoring didn't finish. ${describeScoringFailure(body?.error, res.status)}`,
           );
         }
-        router.push(`/scorecard/${sessionId}`);
+        router.push(`/scorecard/${sessionIdRef.current}`);
         return;
       } catch (error) {
         console.error("[session] scoring failed", error);
@@ -329,7 +342,7 @@ export default function SessionPage({
     }
 
     setStatus("idle");
-  }, [isRealSession, sessionId, flushTurns, sinceStart, clearResponseWatchdog, router]);
+  }, [isRealSession, flushTurns, sinceStart, clearResponseWatchdog, router]);
 
   const start = useCallback(async () => {
     setErrorMessage(null);
@@ -357,6 +370,35 @@ export default function SessionPage({
       setErrorMessage(describeMicError(error));
       setStatus("error");
       return;
+    }
+
+    // A real interview gets its row now, after the mic is granted — not
+    // when the room opened. Deleted again below if the call never starts.
+    let createdNow: string | null = null;
+    if (isRealSession && !sessionIdRef.current) {
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          drillInfo.isDrill
+            ? { stageId, drill: true, questionIndex: drillInfo.questionIndex ?? 0 }
+            : { stageId },
+        ),
+      });
+      const body = (await res.json().catch(() => null)) as { sessionId?: string; error?: string } | null;
+      if (!res.ok || !body?.sessionId) {
+        micStream.getTracks().forEach((track) => track.stop());
+        micStreamRef.current = null;
+        setErrorMessage(describeTokenRefusal(body) ?? `Couldn't start the interview (error ${res.status}).`);
+        setStatus("error");
+        return;
+      }
+      createdNow = body.sessionId;
+      sessionIdRef.current = createdNow;
+      setSessionId(createdNow);
+      // Same page, real id: a refresh from here reopens this session. No
+      // navigation, so nothing remounts mid-call.
+      window.history.replaceState(null, "", `/session/${createdNow}${window.location.search}`);
     }
 
     try {
@@ -519,6 +561,14 @@ export default function SessionPage({
       console.error("[session start]", error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setStatus("error");
+      // The call never started, so the row created for it would only be an
+      // empty "not started" entry in the history: remove it.
+      if (createdNow) {
+        void fetch(`/api/sessions/${createdNow}`, { method: "DELETE" });
+        sessionIdRef.current = null;
+        setSessionId(null);
+        window.history.replaceState(null, "", `/session/new${window.location.search}`);
+      }
       void stop();
     }
   }, [
@@ -542,7 +592,7 @@ export default function SessionPage({
   return (
     <main className="flex flex-1 flex-col h-[calc(100vh-57px)] w-full overflow-hidden">
       <InterviewRoom
-        sessionId={sessionId}
+        sessionId={sessionId ?? "new"}
         isRealSession={isRealSession}
         status={status}
         onStart={() => void start()}

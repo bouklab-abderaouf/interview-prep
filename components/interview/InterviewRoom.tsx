@@ -90,7 +90,9 @@ export function InterviewRoom({
               {stageTitle}
               {company ? ` · ${company}` : targetRole ? ` · ${targetRole}` : ""}
             </h1>
-            <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Session {sessionId.slice(0, 8)}</span>
+            <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              {sessionId === "new" ? "New session" : `Session ${sessionId.slice(0, 8)}`}
+            </span>
           </div>
         </div>
 

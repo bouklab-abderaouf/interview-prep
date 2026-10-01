@@ -4,6 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { z, toJSONSchema } from "zod";
 
 import { GapAnalysis, type GapAnalysis as GapAnalysisType } from "@/lib/gemini/schemas";
+import { FAKE_GAP_ANALYSIS, geminiIsFaked } from "@/lib/gemini/fake";
 import { buildGapAnalysisPrompt } from "@/lib/prompts/gap-analysis";
 import { dataOnlyRule, fence } from "@/lib/prompts/untrusted";
 import { textModels, withModelFallback } from "@/lib/gemini/retry";
@@ -154,6 +155,9 @@ export async function analyzeGap(params: {
   language: InterviewLanguage;
 }): Promise<GapAnalysisType> {
   const { cvBytes, jdText, language } = params;
+
+  // Signed-in browser tests against a local Supabase only (lib/gemini/fake.ts).
+  if (geminiIsFaked()) return FAKE_GAP_ANALYSIS;
 
   const key = cacheKey(cvBytes, jdText, language);
   const cached = cache.get(key);

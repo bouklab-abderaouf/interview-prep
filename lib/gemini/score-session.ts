@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { toJSONSchema } from "zod";
 
+import { fakeScorecard, geminiIsFaked } from "@/lib/gemini/fake";
 import { Scorecard, type Scorecard as ScorecardType } from "@/lib/gemini/schemas";
 import { buildScoringPrompt } from "@/lib/prompts/scoring";
 import { textModels, withModelFallback } from "@/lib/gemini/retry";
@@ -32,6 +33,9 @@ export async function scoreSession(params: {
   drill?: boolean;
   targetQuestion?: string;
 }): Promise<ScorecardType> {
+  // Signed-in browser tests against a local Supabase only (lib/gemini/fake.ts).
+  if (geminiIsFaked()) return fakeScorecard(params.turns.filter((t) => t.role === "candidate").map((t) => t.transcript));
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
