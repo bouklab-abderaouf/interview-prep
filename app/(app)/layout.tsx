@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppNav } from "@/components/nav/AppNav";
 import { BrandMark } from "@/components/nav/BrandMark";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { getThemePreference } from "@/lib/theme-server";
 
 // Phase 2 — defensive auth guard. proxy.ts already redirects unauthenticated
 // requests to protected paths, but Next's own guidance is not to rely on
@@ -26,6 +28,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
         <div className="ml-auto flex items-center gap-4">
           <span className="hidden text-sm text-zinc-500 sm:inline">{data.claims.email}</span>
+          <ThemeToggle initial={await getThemePreference()} />
           <form action="/auth/sign-out" method="post">
             <button
               type="submit"

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { BrandMark } from "@/components/nav/BrandMark";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import type { ThemePreference } from "@/lib/theme";
 
 const REPO_URL = "https://github.com/bouklab-abderaouf/interview-prep";
 
@@ -19,7 +21,7 @@ const LINKS = [
 // sample scorecard had no way back at all. Client component for the active
 // link and the mobile menu; whether the visitor is signed in is decided on
 // the server and passed down, so the right button renders on first paint.
-export function MarketingNav({ signedIn }: { signedIn: boolean }) {
+export function MarketingNav({ signedIn, theme }: { signedIn: boolean; theme: ThemePreference }) {
   const pathname = usePathname();
   // A client-side navigation keeps this layout mounted, so a plain boolean
   // would leave the menu open over the page it just navigated to. Remembering
@@ -57,6 +59,8 @@ export function MarketingNav({ signedIn }: { signedIn: boolean }) {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle initial={theme} />
+
           <a
             href={REPO_URL}
             target="_blank"
