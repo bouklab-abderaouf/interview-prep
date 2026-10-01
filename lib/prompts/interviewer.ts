@@ -79,6 +79,15 @@ const NON_ANSWER_HANDLING: Record<InterviewLanguage, string> = {
   en: "If an answer is empty, inaudible, or doesn't actually address what you asked, say so plainly and ask again — never pretend you got an answer you didn't get.",
 };
 
+// Sent as text by lib/live/client.ts once the session is ready, so the
+// interviewer opens the call like a real one instead of waiting in silence.
+// Kept as a literal here rather than imported: this file is also bundled into
+// the token route, which has no business importing the browser client.
+const CANDIDATE_JOINED: Record<InterviewLanguage, string> = {
+  fr: "La session commence par le message texte « [candidate_joined] ». Ce n'est pas une parole du candidat : cela signifie seulement qu'il vient d'arriver. Réponds-y en ouvrant l'entretien à voix haute, comme décrit ci-dessous, sans mentionner ce message.",
+  en: "The session starts with the text message \"[candidate_joined]\". It is not something the candidate said: it only means they have just joined. Respond to it by opening the interview out loud as described below, without mentioning the message.",
+};
+
 // specs §9 — EU AI Act Art. 50. The UI discloses this before the session, but
 // the persona has a human name, so the model must not undo that when asked.
 const AI_DISCLOSURE: Record<InterviewLanguage, string> = {
@@ -113,6 +122,7 @@ export function buildInterviewerPrompt({
     language === "fr"
       ? "Réponds toujours en français."
       : "Always respond in English.",
+    CANDIDATE_JOINED[language],
     isDrill && stageContext?.drill
       ? DRILL_ARC[language](stageContext.drill.targetQuestion, stageContext.drill.followUps)
       : CONVERSATION_ARC[language],
@@ -131,8 +141,8 @@ export function buildInterviewerPrompt({
   if (scenario) {
     lines.push(
       language === "fr"
-        ? `Voici le CV du candidat : ${scenario.cvSummary} Voici l'offre visée : ${scenario.jdSummary} Une fois que le candidat s'est présenté, pose au moins une question directe qui sonde un vrai décalage entre le CV et l'offre, sans être diplomate à ce sujet.`
-        : `Here is the candidate's CV: ${scenario.cvSummary} Here is the job description: ${scenario.jdSummary} Once the candidate has introduced themselves, ask at least one direct question probing a real gap between the CV and the JD — don't be diplomatic about it.`,
+        ? `Tu t'appelles ${scenario.interviewerName} (${scenario.interviewerRole}) ; présente-toi sous ce nom. Voici le CV du candidat : ${scenario.cvSummary} Voici l'offre visée : ${scenario.jdSummary} Une fois que le candidat s'est présenté, pose au moins une question directe qui sonde un vrai décalage entre le CV et l'offre, sans être diplomate à ce sujet.`
+        : `Your name is ${scenario.interviewerName} (${scenario.interviewerRole}); introduce yourself by that name. Here is the candidate's CV: ${scenario.cvSummary} Here is the job description: ${scenario.jdSummary} Once the candidate has introduced themselves, ask at least one direct question probing a real gap between the CV and the JD — don't be diplomatic about it.`,
     );
   }
 

@@ -7,7 +7,7 @@ import type { Session } from "@google/genai";
 import { startRecording, type AudioRecorderHandle } from "@/lib/audio/recorder";
 import { describeMicError, requestMicrophone } from "@/lib/audio/mic";
 import { createAudioPlayer, type AudioPlayerHandle } from "@/lib/audio/player";
-import { connectLiveSession, sendAudioChunk } from "@/lib/live/client";
+import { connectLiveSession, sendAudioChunk, startInterviewerTurn } from "@/lib/live/client";
 import type { TokenResponseBody } from "@/lib/live/types";
 import { TurnTimeline } from "@/lib/live/turn-timeline";
 import { createClient } from "@/lib/supabase/client";
@@ -364,10 +364,16 @@ export default function SessionPage({
       const player = createAudioPlayer();
       playerRef.current = player;
 
+      // connect() resolves when the socket opens, but input sent before the
+      // server's setupComplete is rejected — the opening cue waits for both.
+      let markSetupComplete!: () => void;
+      const setupComplete = new Promise<void>((resolve) => (markSetupComplete = resolve));
+
       const session = await connectLiveSession(tokenBody, {
         onOpen: () => console.log("[live session] websocket open"),
 
         onSetupComplete: () => {
+          markSetupComplete();
           setStatus("connected");
           if (isRealSession) {
             flushIntervalRef.current = setInterval(() => void flushTurns(), FLUSH_INTERVAL_MS);
@@ -447,6 +453,7 @@ export default function SessionPage({
       });
 
       sessionRef.current = session;
+      void setupComplete.then(() => startInterviewerTurn(session));
 
       recorderRef.current = await startRecording(micStream, {
         onChunk: (chunk) => sendAudioChunk(session, chunk),

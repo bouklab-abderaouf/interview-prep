@@ -105,6 +105,23 @@ function handleMessage(message: LiveServerMessage, callbacks: LiveClientCallback
   }
 }
 
+// The Live API waits for the user to speak first, so a session used to open on
+// silence: a demo visitor who waited for the interviewer heard nothing for two
+// minutes and then got "That's the demo." Real interviewers open the call, so
+// once setup completes the client sends this marker as text, and the
+// interviewer prompt (CANDIDATE_JOINED in lib/prompts/interviewer.ts) tells the
+// model it means "the candidate is here — open the interview", not speech.
+export const CANDIDATE_JOINED_MARKER = "[candidate_joined]";
+
+export function startInterviewerTurn(session: Session) {
+  try {
+    session.sendRealtimeInput({ text: CANDIDATE_JOINED_MARKER });
+  } catch (error) {
+    // Not fatal: the candidate can still open by speaking, as before.
+    console.error("[live] could not send the opening cue", error);
+  }
+}
+
 export function sendAudioChunk(session: Session, base64Pcm16k: string) {
   session.sendRealtimeInput({
     audio: { data: base64Pcm16k, mimeType: "audio/pcm;rate=16000" },
