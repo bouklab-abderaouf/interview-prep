@@ -91,8 +91,9 @@ Setup (you), with UptimeRobot or Better Stack (free tiers are enough):
 
 Run them after every migration: Supabase → Advisors → Security (or the
 Supabase MCP `get_advisors`). Expected and accepted (2026-10-01):
-- `rls_enabled_no_policy` on `usage_counters`: by design. It's touched only
-  by the service role.
+- `rls_enabled_no_policy` on `usage_counters`, `app_settings` and
+  `signup_allowlist`: by design. No client may read or write them; they're
+  managed from the SQL editor or the service role.
 - `authenticated_security_definer_function_executable` on
   `consume_user_quota`: by design. Users must call it through their own
   client so the database knows who they are, and `user_daily_usage` has no

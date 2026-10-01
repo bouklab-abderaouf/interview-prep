@@ -3,9 +3,11 @@
 # credentials (see playwright.config.ts). No secrets are needed.
 name: CI
 
+# Every push to any branch, so a branch is tested before a pull request
+# exists; pull requests from this repo would only repeat that run, so only
+# pull requests from forks get their own.
 on:
   push:
-    branches: [main]
   pull_request:
 
 concurrency:
@@ -16,6 +18,7 @@ jobs:
   check:
     name: Typecheck, lint, unit tests
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,6 +33,7 @@ jobs:
   e2e:
     name: Browser tests
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,6 +55,7 @@ jobs:
   e2e-auth:
     name: Signed-in browser tests
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     env:
       SUPABASE_CLI: supabase
     steps:
