@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { AppNav } from "@/components/nav/AppNav";
+import { BrandMark } from "@/components/nav/BrandMark";
 
 // Phase 2 — defensive auth guard. proxy.ts already redirects unauthenticated
 // requests to protected paths, but Next's own guidance is not to rely on
@@ -20,9 +20,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-1 flex-col">
       <header className="sticky top-0 z-30 flex items-center gap-6 border-b border-zinc-200 bg-white/80 px-6 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
-        <Link href="/home" className="font-semibold tracking-tight">
-          Interview Prep
-        </Link>
+        <BrandMark href="/home" />
 
         <AppNav />
 
