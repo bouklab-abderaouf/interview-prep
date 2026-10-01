@@ -101,3 +101,37 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/sessions/[
 
   return NextResponse.json({ ok: true });
 }
+
+// Deletes one interview. Its turns and scorecard go with it (both cascade
+// from sessions). XP and stage progress already earned stay: they live on
+// profiles/progress as a record of practice done, and recomputing them from
+// whatever is left would let a deletion re-lock a stage mid-roadmap.
+export async function DELETE(_request: Request, ctx: RouteContext<"/api/sessions/[id]">) {
+  const { id: sessionId } = await ctx.params;
+  const supabase = await createClient();
+
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims.sub;
+  if (!userId) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // RLS ("own sessions") already scopes this; the user_id filter is a second
+  // lock in case a policy is ever loosened. `.select()` returns what was
+  // actually deleted, so "not yours" and "doesn't exist" are both a 404.
+  const { data: deleted, error } = await supabase
+    .from("sessions")
+    .delete()
+    .eq("id", sessionId)
+    .eq("user_id", userId)
+    .select("id");
+  if (error) {
+    console.error("[api/sessions/:id] delete failed", { message: error.message, code: error.code });
+    return NextResponse.json({ error: "delete_failed" }, { status: 502 });
+  }
+  if (!deleted?.length) {
+    return NextResponse.json({ error: "session_not_found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ ok: true });
+}

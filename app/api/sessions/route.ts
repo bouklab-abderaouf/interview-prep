@@ -95,3 +95,46 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ sessionId: session.id });
 }
+
+const BulkDeleteSchema = z.object({
+  ids: z.array(z.uuid()).min(1).max(200),
+});
+
+// Bulk delete for /interviews' "Clear empty sessions": a Start that never
+// got an answer still leaves a row, and a dozen of them bury the real
+// interviews. Same rules as DELETE /api/sessions/[id] — cascades to turns
+// and scorecards, leaves XP and progress alone.
+export async function DELETE(request: Request) {
+  const supabase = await createClient();
+
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims.sub;
+  if (!userId) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+  }
+
+  const parsed = BulkDeleteSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "invalid_request" }, { status: 400 });
+  }
+
+  const { data: deleted, error } = await supabase
+    .from("sessions")
+    .delete()
+    .in("id", parsed.data.ids)
+    .eq("user_id", userId)
+    .select("id");
+  if (error) {
+    console.error("[api/sessions] bulk delete failed", { message: error.message, code: error.code });
+    return NextResponse.json({ error: "delete_failed" }, { status: 502 });
+  }
+
+  return NextResponse.json({ deleted: deleted?.length ?? 0 });
+}

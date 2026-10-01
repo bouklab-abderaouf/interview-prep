@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 interface ScoreSessionButtonProps {
   sessionId: string;
   label?: string;
+  /** "sm" for list rows */
+  size?: "md" | "sm";
 }
 
 // A completed interview whose scoring call failed used to be a dead end: the
@@ -13,7 +15,7 @@ interface ScoreSessionButtonProps {
 // scorecard again, so one transient Gemini 503 permanently cost an 11-minute
 // session its result. Scoring is idempotent server-side, so this is safe to
 // press repeatedly and safe to offer on any unscored session.
-export function ScoreSessionButton({ sessionId, label = "Score this interview" }: ScoreSessionButtonProps) {
+export function ScoreSessionButton({ sessionId, label = "Score this interview", size = "md" }: ScoreSessionButtonProps) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "scoring" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -39,16 +41,20 @@ export function ScoreSessionButton({ sessionId, label = "Score this interview" }
   };
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className={`flex flex-col gap-1 ${size === "sm" ? "items-end" : "items-start"}`}>
       <button
         type="button"
         onClick={handleClick}
         disabled={status === "scoring"}
-        className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+        className={`rounded-lg bg-zinc-900 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 ${
+          size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm"
+        }`}
       >
         {status === "scoring" ? "Scoring…" : label}
       </button>
-      {errorMessage && <p className="text-xs text-red-600">{errorMessage}</p>}
+      {errorMessage && (
+        <p className={`text-xs text-red-600 dark:text-red-400 ${size === "sm" ? "max-w-48 text-right" : ""}`}>{errorMessage}</p>
+      )}
     </div>
   );
 }

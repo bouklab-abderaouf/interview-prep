@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { BackLink } from "@/components/nav/BackLink";
 import { DeleteAccountButton } from "@/components/ui/DeleteAccountButton";
 import { DeleteDocumentButton } from "@/components/ui/DeleteDocumentButton";
-import { formatDateTime } from "@/lib/format";
+import { LocalTime } from "@/components/ui/LocalTime";
 
 interface DocumentRow {
   id: string;
@@ -94,7 +94,7 @@ export default async function DocumentsPage() {
                         : "CV"}
                     </span>
                     <span className="text-xs text-zinc-500">
-                      Uploaded {formatDateTime(doc.created_at)}
+                      Uploaded <LocalTime iso={doc.created_at} />
                       {/* Failed analyses upload the file before they fail, so
                           an unlinked document is a leftover, not a mystery. */}
                       {!roadmap && " · analysis didn't finish"}
@@ -155,7 +155,7 @@ export default async function DocumentsPage() {
                           : "Job description"}
                       </span>
                       <span className="text-xs text-zinc-500">
-                        Pasted {formatDateTime(doc.created_at)} &middot; {text.length} characters
+                        Pasted <LocalTime iso={doc.created_at} /> &middot; {text.length} characters
                         {!roadmap && " · analysis didn't finish"}
                       </span>
                     </div>

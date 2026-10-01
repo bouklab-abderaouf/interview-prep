@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { XpBar } from "@/components/roadmap/XpBar";
 import { DeleteRoadmapButton } from "@/components/roadmap/DeleteRoadmapButton";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { formatDate, formatDuration } from "@/lib/format";
 
 interface RoadmapRow {
@@ -74,7 +75,9 @@ export default async function HomePage() {
         .select("id, stage_id, status, started_at, duration_seconds")
         .eq("mode", "full")
         .order("started_at", { ascending: false })
-        .limit(5)
+        // Only scored ones are listed below; 20 leaves room for the empty
+        // sessions an idle interview room leaves behind.
+        .limit(20)
         .returns<SessionRow[]>(),
       userId
         ? supabase
@@ -97,6 +100,7 @@ export default async function HomePage() {
         .returns<{ session_id: string; overall: number; stars: number }[]>()
     : { data: null };
   const scorecardBySession = new Map((scorecards ?? []).map((s) => [s.session_id, s]));
+  const recentScored = (sessions ?? []).filter((s) => scorecardBySession.has(s.id)).slice(0, 5);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-10 p-8">
@@ -194,48 +198,37 @@ export default async function HomePage() {
           </Link>
         </div>
 
-        {sessions && sessions.length > 0 ? (
+        {recentScored.length > 0 ? (
           <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
-            {sessions.map((session) => {
-              const scorecard = scorecardBySession.get(session.id);
+            {recentScored.map((session) => {
+              const scorecard = scorecardBySession.get(session.id)!;
               const stage = session.stage_id ? stageById.get(session.stage_id) : undefined;
-
-              const row = (
-                <div className="flex items-center justify-between gap-4 py-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-medium">{stage?.title ?? "Voice loop test"}</span>
-                    <span className="text-xs text-zinc-500">
-                      {formatDate(session.started_at)} &middot;{" "}
-                      {formatDuration(session.duration_seconds)}
-                    </span>
-                  </div>
-                  {scorecard ? (
-                    <span className="text-sm tabular-nums">
-                      <span className="font-medium">{scorecard.overall}</span>
-                      <span className="text-zinc-500">/100</span>
-                    </span>
-                  ) : (
-                    <span className="text-xs text-zinc-500 capitalize">{session.status}</span>
-                  )}
-                </div>
-              );
 
               return (
                 <li key={session.id}>
-                  {scorecard ? (
-                    <Link href={`/scorecard/${session.id}`} className="block hover:opacity-70">
-                      {row}
-                    </Link>
-                  ) : (
-                    row
-                  )}
+                  <Link
+                    href={`/scorecard/${session.id}`}
+                    className="flex items-center justify-between gap-4 py-3 transition-opacity hover:opacity-70"
+                  >
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium">{stage?.title ?? "Voice loop test"}</span>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                        <LocalTime iso={session.started_at} /> &middot;{" "}
+                        {formatDuration(session.duration_seconds)}
+                      </span>
+                    </div>
+                    <span className="text-sm tabular-nums">
+                      <span className="font-medium">{scorecard.overall}</span>
+                      <span className="text-zinc-500 dark:text-zinc-400">/100</span>
+                    </span>
+                  </Link>
                 </li>
               );
             })}
           </ul>
         ) : (
-          <p className="text-sm text-zinc-500">
-            No interviews yet — open a roadmap and start a stage.
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            No scored interviews yet — open a roadmap and start a stage.
           </p>
         )}
       </section>

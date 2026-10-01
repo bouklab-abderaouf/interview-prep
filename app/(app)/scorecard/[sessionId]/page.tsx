@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { ScorecardView, type StageProgressInfo } from "@/components/scorecard/ScorecardView";
 import { BackLink } from "@/components/nav/BackLink";
 import { StartStageButton } from "@/components/roadmap/StartStageButton";
-import { formatDateTime, formatDuration } from "@/lib/format";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { formatDuration } from "@/lib/format";
 
 // specs §7.4 — score ring/stars/XP/verdict above the fold; STAR radar,
 // communication metrics with reference ranges, strengths, improvements,
@@ -86,7 +87,7 @@ export default async function ScorecardPage({
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">{stage?.title ?? "Scorecard"}</h1>
           <p className="text-sm text-zinc-500">
-            {formatDateTime(session?.started_at ?? null)} &middot;{" "}
+            <LocalTime iso={session?.started_at ?? null} /> &middot;{" "}
             {formatDuration(session?.duration_seconds ?? null)}
           </p>
         </div>
