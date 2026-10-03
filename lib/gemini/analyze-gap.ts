@@ -4,8 +4,10 @@ import { GoogleGenAI } from "@google/genai";
 import { z, toJSONSchema } from "zod";
 
 import { GapAnalysis, type GapAnalysis as GapAnalysisType } from "@/lib/gemini/schemas";
+import { FAKE_GAP_ANALYSIS, geminiIsFaked } from "@/lib/gemini/fake";
 import { buildGapAnalysisPrompt } from "@/lib/prompts/gap-analysis";
-import { withRetry } from "@/lib/gemini/retry";
+import { dataOnlyRule, fence } from "@/lib/prompts/untrusted";
+import { textModels, withModelFallback } from "@/lib/gemini/retry";
 import type { InterviewLanguage } from "@/lib/live/types";
 
 // specs §6.2 — cache keyed on hash(cv_bytes + jd_text + language) so re-runs
@@ -76,25 +78,28 @@ const followUpsResponseSchema = toJSONSchema(FollowUpsResult);
 
 async function generatePrimary(
   client: GoogleGenAI,
-  model: string,
+  models: string[],
   cvBytes: Buffer,
   jdText: string,
   language: InterviewLanguage,
 ): Promise<GapAnalysisPrimaryType> {
-  const response = await withRetry(() =>
-    client.models.generateContent({
-      model,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: buildGapAnalysisPrompt({ jdText, language }) },
-            { inlineData: { data: cvBytes.toString("base64"), mimeType: "application/pdf" } },
-          ],
-        },
-      ],
-      config: { responseMimeType: "application/json", responseJsonSchema: primaryResponseSchema },
-    }),
+  const response = await withModelFallback(
+    models,
+    (model) =>
+      client.models.generateContent({
+        model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: buildGapAnalysisPrompt({ jdText, language }) },
+              { inlineData: { data: cvBytes.toString("base64"), mimeType: "application/pdf" } },
+            ],
+          },
+        ],
+        config: { responseMimeType: "application/json", responseJsonSchema: primaryResponseSchema },
+      }),
+    { label: "gap-analysis" },
   );
 
   const text = response.text;
@@ -104,7 +109,7 @@ async function generatePrimary(
 
 async function generateFollowUps(
   client: GoogleGenAI,
-  model: string,
+  models: string[],
   stages: GapAnalysisPrimaryType["stages"],
   language: InterviewLanguage,
 ): Promise<z.infer<typeof FollowUpsResult>> {
@@ -113,21 +118,30 @@ async function generateFollowUps(
       ? "Pour chaque question ci-dessous, propose jusqu'à 3 questions de relance courtes qui approfondissent la même réponse."
       : "For each question below, propose up to 3 short follow-up questions that dig deeper into the same answer.",
     "Preserve the exact stage and question order from the input — output one follow_ups array per question, in order.",
+    // These questions were generated from the candidate's CV, so they are
+    // data too: a follow-up must be an interview question, nothing else.
+    dataOnlyRule(["questions"], "en"),
     "",
-    JSON.stringify(
-      stages.map((stage) => ({
-        title: stage.title,
-        questions: stage.questions.map((q) => ({ text: q.text, targets: q.targets })),
-      })),
+    fence(
+      "questions",
+      JSON.stringify(
+        stages.map((stage) => ({
+          title: stage.title,
+          questions: stage.questions.map((q) => ({ text: q.text, targets: q.targets })),
+        })),
+      ),
     ),
   ].join("\n");
 
-  const response = await withRetry(() =>
-    client.models.generateContent({
-      model,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { responseMimeType: "application/json", responseJsonSchema: followUpsResponseSchema },
-    }),
+  const response = await withModelFallback(
+    models,
+    (model) =>
+      client.models.generateContent({
+        model,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { responseMimeType: "application/json", responseJsonSchema: followUpsResponseSchema },
+      }),
+    { label: "gap-analysis follow-ups" },
   );
 
   const text = response.text;
@@ -142,20 +156,21 @@ export async function analyzeGap(params: {
 }): Promise<GapAnalysisType> {
   const { cvBytes, jdText, language } = params;
 
+  // Signed-in browser tests against a local Supabase only (lib/gemini/fake.ts).
+  if (geminiIsFaked()) return FAKE_GAP_ANALYSIS;
+
   const key = cacheKey(cvBytes, jdText, language);
   const cached = cache.get(key);
   if (cached) return cached;
 
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_TEXT_MODEL;
-  if (!apiKey || !model) {
-    throw new Error("GEMINI_API_KEY or GEMINI_TEXT_MODEL not configured");
-  }
+  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+  const models = textModels();
 
   const client = new GoogleGenAI({ apiKey });
 
-  const primary = await generatePrimary(client, model, cvBytes, jdText, language);
-  const followUps = await generateFollowUps(client, model, primary.stages, language);
+  const primary = await generatePrimary(client, models, cvBytes, jdText, language);
+  const followUps = await generateFollowUps(client, models, primary.stages, language);
 
   const stages = primary.stages.map((stage, stageIndex) => ({
     ...stage,

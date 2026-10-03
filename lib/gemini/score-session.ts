@@ -1,9 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { toJSONSchema } from "zod";
 
+import { fakeScorecard, geminiIsFaked } from "@/lib/gemini/fake";
 import { Scorecard, type Scorecard as ScorecardType } from "@/lib/gemini/schemas";
 import { buildScoringPrompt } from "@/lib/prompts/scoring";
-import { withRetry } from "@/lib/gemini/retry";
+import { textModels, withModelFallback } from "@/lib/gemini/retry";
 import type { Turn, DeterministicMetrics } from "@/lib/metrics/deterministic";
 import type { InterviewLanguage } from "@/lib/live/types";
 
@@ -32,11 +33,11 @@ export async function scoreSession(params: {
   drill?: boolean;
   targetQuestion?: string;
 }): Promise<ScorecardType> {
+  // Signed-in browser tests against a local Supabase only (lib/gemini/fake.ts).
+  if (geminiIsFaked()) return fakeScorecard(params.turns.filter((t) => t.role === "candidate").map((t) => t.transcript));
+
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_TEXT_MODEL;
-  if (!apiKey || !model) {
-    throw new Error("GEMINI_API_KEY or GEMINI_TEXT_MODEL not configured");
-  }
+  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
 
   const client = new GoogleGenAI({ apiKey });
   const prompt = buildScoringPrompt(params);
@@ -48,15 +49,15 @@ export async function scoreSession(params: {
   // still capped low enough not to eat the free tier's daily request cap on
   // one session — the UI can retry deliberately, which is cheaper than
   // retrying speculatively here.
-  const response = await withRetry(
-    () =>
+  const response = await withModelFallback(
+    textModels(),
+    (model) =>
       client.models.generateContent({
         model,
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: { responseMimeType: "application/json", responseJsonSchema },
       }),
-    4,
-    3000,
+    { attemptsPerModel: 3, baseDelayMs: 3000, label: "scoring" },
   );
 
   const text = response.text;
@@ -72,5 +73,16 @@ export async function scoreSession(params: {
   const fullTranscript = params.turns.map((t) => t.transcript).join("\n");
   const strengths = parsed.strengths.filter((s) => fullTranscript.includes(s.quote_from_answer));
 
-  return { ...parsed, strengths };
+  // bank_index drives a "drill this question" link, so an out-of-range index
+  // must not survive; scores are clamped for the same reason overall is.
+  const per_question = parsed.per_question.map((q) => ({
+    ...q,
+    bank_index:
+      Number.isInteger(q.bank_index) && q.bank_index >= 0 && q.bank_index < params.questionBank.length
+        ? q.bank_index
+        : -1,
+    score: Math.max(0, Math.min(100, Math.round(q.score))),
+  }));
+
+  return { ...parsed, strengths, per_question };
 }

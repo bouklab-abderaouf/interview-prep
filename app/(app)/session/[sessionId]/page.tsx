@@ -7,11 +7,15 @@ import type { Session } from "@google/genai";
 import { startRecording, type AudioRecorderHandle } from "@/lib/audio/recorder";
 import { describeMicError, requestMicrophone } from "@/lib/audio/mic";
 import { createAudioPlayer, type AudioPlayerHandle } from "@/lib/audio/player";
-import { connectLiveSession, sendAudioChunk } from "@/lib/live/client";
+import { connectLiveSession, sendAudioChunk, startInterviewerTurn } from "@/lib/live/client";
 import type { TokenResponseBody } from "@/lib/live/types";
-import type { Turn } from "@/lib/metrics/deterministic";
+import { TurnTimeline } from "@/lib/live/turn-timeline";
+import { describeLimitRefusal } from "@/lib/limit-messages";
+import { classifyLiveClose, describeLiveClose } from "@/lib/live/close-reason";
 import { createClient } from "@/lib/supabase/client";
 import { InterviewRoom } from "@/components/interview/InterviewRoom";
+import { describeScoringFailure } from "@/components/interview/ScoreSessionButton";
+import { reportEvent } from "@/lib/monitoring/events";
 
 // Phase 0 §4 walking-skeleton harness, extended in Phase 3 (§7.1) into the
 // real interview room when a stageId is present: mode: 'full', turn capture,
@@ -23,11 +27,6 @@ type Status = "idle" | "connecting" | "connected" | "scoring" | "error";
 interface TranscriptLine {
   role: "candidate" | "interviewer";
   text: string;
-}
-
-interface TurnAccumulator {
-  text: string;
-  startMs: number | null;
 }
 
 const FLUSH_INTERVAL_MS = 60_000;
@@ -44,7 +43,13 @@ export default function SessionPage({
 }: {
   params: Promise<{ sessionId: string }>;
 }) {
-  const { sessionId } = use(params);
+  const { sessionId: routeSessionId } = use(params);
+  // `/session/new?stageId=…` has no row yet: it's created when the call
+  // starts. Opening the room and leaving used to leave an "active" session
+  // behind forever (production readiness phase 6). The id lives in a ref too,
+  // so callbacks set up during the call (flushes, scoring) see it.
+  const [sessionId, setSessionId] = useState<string | null>(routeSessionId === "new" ? null : routeSessionId);
+  const sessionIdRef = useRef<string | null>(sessionId);
   const searchParams = useSearchParams();
   const stageId = searchParams.get("stageId");
   const isRealSession = Boolean(stageId);
@@ -109,18 +114,24 @@ export default function SessionPage({
           question_bank: Array<{ text: string; targets: string }> | null;
         }>();
 
-      const { data: sessionRow } = await supabase
-        .from("sessions")
-        .select("usage")
-        .eq("id", sessionId)
-        .maybeSingle<{
-          usage: {
-            drill?: boolean;
-            targetQuestion?: string | null;
-            targets?: string | null;
-            questionIndex?: number;
-          } | null;
-        }>();
+      // A new room has no row yet; the drill details come from the URL.
+      const sessionRow =
+        routeSessionId === "new"
+          ? null
+          : (
+              await supabase
+                .from("sessions")
+                .select("usage")
+                .eq("id", routeSessionId)
+                .maybeSingle<{
+                  usage: {
+                    drill?: boolean;
+                    targetQuestion?: string | null;
+                    targets?: string | null;
+                    questionIndex?: number;
+                  } | null;
+                }>()
+            ).data;
 
       const isDrill = Boolean(sessionRow?.usage?.drill || isDrillParam);
       const qIndex = sessionRow?.usage?.questionIndex ?? parsedQIndex;
@@ -156,7 +167,7 @@ export default function SessionPage({
       }
     }
     void loadStage();
-  }, [stageId, sessionId, isDrillParam, parsedQIndex]);
+  }, [stageId, routeSessionId, isDrillParam, parsedQIndex]);
 
   const sessionRef = useRef<Session | null>(null);
   const recorderRef = useRef<AudioRecorderHandle | null>(null);
@@ -174,43 +185,21 @@ export default function SessionPage({
   // asynchronously while stop() keeps executing past that point.
   const endingRef = useRef(false);
 
-  // Turn capture (specs §7.1) — only meaningful for a real session.
+  // Turn capture (specs §7.1) — only meaningful for a real session. Timing
+  // comes from audio events, words from transcription; see
+  // lib/live/turn-timeline.ts for why those have to be kept apart.
   const sessionStartRef = useRef<number | null>(null);
-  const turnsRef = useRef<Turn[]>([]);
-  const candidateAccRef = useRef<TurnAccumulator>({ text: "", startMs: null });
-  const interviewerAccRef = useRef<TurnAccumulator>({ text: "", startMs: null });
+  const timelineRef = useRef(new TurnTimeline());
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const appendTranscript = useCallback((line: TranscriptLine) => {
     setTranscript((prev) => [...prev, line]);
   }, []);
 
-  // Moves whatever's been accumulated for a role into a finished turn. Called
-  // both opportunistically from a transcription chunk marked `finished`
-  // (unverified in practice whether the API reliably sets this) and — the
-  // mechanism this now actually depends on — from turn-boundary signals
-  // already proven to fire: activity-end for the candidate, turnComplete for
-  // the interviewer. The startMs === null guard makes calling this from
-  // multiple triggers for the same turn safe: whichever fires first flushes
-  // and resets the accumulator, so a later trigger for the same turn is a
-  // harmless no-op instead of a duplicate push.
-  const flushAccumulatedTurn = useCallback(
-    (role: "interviewer" | "candidate", accRef: React.RefObject<TurnAccumulator>) => {
-      if (accRef.current.startMs === null || !accRef.current.text.trim()) return;
-      const now = performance.now();
-      const sessionStart = sessionStartRef.current ?? now;
-      const turn: Turn = {
-        role,
-        transcript: accRef.current.text,
-        start_ms: Math.round(accRef.current.startMs),
-        end_ms: Math.round(now - sessionStart),
-      };
-      turnsRef.current.push(turn);
-      accRef.current = { text: "", startMs: null };
-      appendTranscript({ role, text: turn.transcript });
-    },
-    [appendTranscript],
-  );
+  // ms since session start, the unit turns.start_ms/end_ms are stored in.
+  const sinceStart = useCallback((performanceTime: number = performance.now()) => {
+    return performanceTime - (sessionStartRef.current ?? performanceTime);
+  }, []);
 
   // Shared by the server's real voiceActivityDetectionSignal (allowlist-gated,
   // usually silent — see lib/live/client.ts) and the local energy-based
@@ -229,6 +218,7 @@ export default function SessionPage({
   const startResponseWatchdog = useCallback(() => {
     if (responseWatchdogRef.current) clearTimeout(responseWatchdogRef.current);
     responseWatchdogRef.current = setTimeout(() => {
+      reportEvent("live.watchdog_silence", { mode: "full" });
       setStalledWarning(
         "No response yet after 12s. This is usually a transient Live API issue or a free-tier quota limit, not a problem with your answer — check the console, or try again in a bit.",
       );
@@ -252,38 +242,27 @@ export default function SessionPage({
     clearResponseWatchdog();
   }, [clearResponseWatchdog]);
 
-  // inputAudioTranscription/outputAudioTranscription arrive as incremental
-  // deltas, not the full turn text — concatenate until `finished`, then
-  // record start_ms (first chunk) / end_ms (finished chunk) relative to
-  // session start (specs §3 turns.start_ms/end_ms: "ms since session start").
-  const captureTranscriptChunk = useCallback(
-    (role: "interviewer" | "candidate", accRef: React.RefObject<TurnAccumulator>, text: string, finished: boolean) => {
-      const now = performance.now();
-      const sessionStart = sessionStartRef.current ?? now;
-      if (accRef.current.startMs === null) {
-        accRef.current.startMs = now - sessionStart;
-      }
-      accRef.current.text += text;
-      if (finished) flushAccumulatedTurn(role, accRef);
-    },
-    [flushAccumulatedTurn],
-  );
-
   const flushTurns = useCallback(
     async (status?: "completed" | "abandoned" | "errored", keepalive = false) => {
-      if (!isRealSession) return;
+      const id = sessionIdRef.current;
+      if (!isRealSession || !id) return;
       try {
-        await fetch(`/api/sessions/${sessionId}`, {
+        const res = await fetch(`/api/sessions/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ turns: turnsRef.current, ...(status ? { status } : {}) }),
+          body: JSON.stringify({
+            turns: timelineRef.current.snapshot(sinceStart()),
+            ...(status ? { status } : {}),
+          }),
           keepalive,
         });
+        if (!res.ok) reportEvent("session.flush_failed", { status: res.status });
       } catch (error) {
         console.error("[session] flush failed", error);
+        reportEvent("session.flush_failed", { status: "network" });
       }
     },
-    [isRealSession, sessionId],
+    [isRealSession, sinceStart],
   );
 
   // beforeunload can't await a normal fetch, but `keepalive: true` lets the
@@ -315,10 +294,9 @@ export default function SessionPage({
     if (interviewerSpeakingTimeoutRef.current) {
       clearTimeout(interviewerSpeakingTimeoutRef.current);
     }
-    // Flush whatever's still mid-turn (e.g. the interviewer was talking when
+    // Commit whatever's still mid-turn (e.g. the interviewer was talking when
     // the user hit Stop) before it's lost.
-    flushAccumulatedTurn("candidate", candidateAccRef);
-    flushAccumulatedTurn("interviewer", interviewerAccRef);
+    const turns = timelineRef.current.finish(sinceStart());
     recorderRef.current?.stop();
     recorderRef.current = null;
     // stop() on the recorder already stops these tracks; this covers the case
@@ -330,21 +308,32 @@ export default function SessionPage({
     sessionRef.current?.close();
     sessionRef.current = null;
 
-    if (isRealSession && turnsRef.current.length > 0) {
+    if (isRealSession && turns.length > 0) {
       setStatus("scoring");
       await flushTurns("completed");
       try {
-        const res = await fetch(`/api/sessions/${sessionId}/score`, { method: "POST" });
-        if (!res.ok) throw new Error(`score endpoint returned ${res.status}`);
-        router.push(`/scorecard/${sessionId}`);
+        const res = await fetch(`/api/sessions/${sessionIdRef.current}/score`, { method: "POST" });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          const refusal = describeLimitRefusal(body);
+          throw new Error(
+            refusal
+              ? `Your interview was saved, but it can't be scored yet. ${refusal}`
+              : `Your interview was saved, but scoring didn't finish. ${describeScoringFailure(body?.error, res.status)}`,
+          );
+        }
+        router.push(`/scorecard/${sessionIdRef.current}`);
         return;
       } catch (error) {
         console.error("[session] scoring failed", error);
         // The turns are already flushed and the session is marked completed,
         // so this is recoverable — surface the retry rather than stranding a
         // finished interview behind a console message.
+        const message = error instanceof Error ? error.message : "";
         setErrorMessage(
-          "Your interview was saved, but scoring failed — usually the model being briefly overloaded.",
+          message.startsWith("Your interview was saved")
+            ? message
+            : "Your interview was saved, but scoring failed — usually the model being briefly overloaded.",
         );
         setScoringRecoverable(true);
         setStatus("error");
@@ -353,7 +342,7 @@ export default function SessionPage({
     }
 
     setStatus("idle");
-  }, [isRealSession, sessionId, flushTurns, flushAccumulatedTurn, clearResponseWatchdog, router]);
+  }, [isRealSession, flushTurns, sinceStart, clearResponseWatchdog, router]);
 
   const start = useCallback(async () => {
     setErrorMessage(null);
@@ -362,9 +351,10 @@ export default function SessionPage({
     setStatus("connecting");
     endingRef.current = false;
     sessionStartRef.current = performance.now();
-    turnsRef.current = [];
-    candidateAccRef.current = { text: "", startMs: null };
-    interviewerAccRef.current = { text: "", startMs: null };
+    setTranscript([]);
+    timelineRef.current = new TurnTimeline((turn) =>
+      appendTranscript({ role: turn.role, text: turn.transcript }),
+    );
 
     // The microphone comes first, before a token is minted or the Live socket
     // is opened. Asking last meant a blocked mic still spent a Live API
@@ -376,9 +366,39 @@ export default function SessionPage({
       micStreamRef.current = micStream;
     } catch (error) {
       console.error("[session start] mic permission failed", error);
+      reportEvent("live.mic_error", { name: error instanceof DOMException ? error.name : "unknown" });
       setErrorMessage(describeMicError(error));
       setStatus("error");
       return;
+    }
+
+    // A real interview gets its row now, after the mic is granted — not
+    // when the room opened. Deleted again below if the call never starts.
+    let createdNow: string | null = null;
+    if (isRealSession && !sessionIdRef.current) {
+      const res = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          drillInfo.isDrill
+            ? { stageId, drill: true, questionIndex: drillInfo.questionIndex ?? 0 }
+            : { stageId },
+        ),
+      });
+      const body = (await res.json().catch(() => null)) as { sessionId?: string; error?: string } | null;
+      if (!res.ok || !body?.sessionId) {
+        micStream.getTracks().forEach((track) => track.stop());
+        micStreamRef.current = null;
+        setErrorMessage(describeTokenRefusal(body) ?? `Couldn't start the interview (error ${res.status}).`);
+        setStatus("error");
+        return;
+      }
+      createdNow = body.sessionId;
+      sessionIdRef.current = createdNow;
+      setSessionId(createdNow);
+      // Same page, real id: a refresh from here reopens this session. No
+      // navigation, so nothing remounts mid-call.
+      window.history.replaceState(null, "", `/session/${createdNow}${window.location.search}`);
     }
 
     try {
@@ -398,17 +418,50 @@ export default function SessionPage({
       });
 
       if (!tokenRes.ok) {
-        throw new Error(`token endpoint returned ${tokenRes.status}`);
+        const refusal = await tokenRes.json().catch(() => null);
+        reportEvent("live.token_refused", {
+          status: tokenRes.status,
+          error: (refusal as { error?: string } | null)?.error,
+        });
+        throw new Error(describeTokenRefusal(refusal) ?? `token endpoint returned ${tokenRes.status}`);
       }
 
       const tokenBody: TokenResponseBody = await tokenRes.json();
       const player = createAudioPlayer();
       playerRef.current = player;
 
+      // The socket died under us (quota, network, a server error). Release
+      // the mic and speakers, and keep what was said: the turns are saved
+      // as "errored" so the interview can still be scored from Interviews
+      // instead of losing everything since the last 60s flush.
+      const abandonAfterDrop = async (reason: string) => {
+        endingRef.current = true;
+        if (flushIntervalRef.current) clearInterval(flushIntervalRef.current);
+        flushIntervalRef.current = null;
+        const turns = timelineRef.current.finish(sinceStart());
+        recorderRef.current?.stop();
+        recorderRef.current = null;
+        micStreamRef.current?.getTracks().forEach((track) => track.stop());
+        micStreamRef.current = null;
+        playerRef.current?.close();
+        playerRef.current = null;
+        sessionRef.current = null;
+        const saved = isRealSession && turns.length > 0;
+        if (saved) await flushTurns("errored");
+        setErrorMessage(saved ? `${reason} Your answers so far are saved — you can score them from Interviews.` : reason);
+        setStatus("error");
+      };
+
+      // connect() resolves when the socket opens, but input sent before the
+      // server's setupComplete is rejected — the opening cue waits for both.
+      let markSetupComplete!: () => void;
+      const setupComplete = new Promise<void>((resolve) => (markSetupComplete = resolve));
+
       const session = await connectLiveSession(tokenBody, {
         onOpen: () => console.log("[live session] websocket open"),
 
         onSetupComplete: () => {
+          markSetupComplete();
           setStatus("connected");
           if (isRealSession) {
             flushIntervalRef.current = setInterval(() => void flushTurns(), FLUSH_INTERVAL_MS);
@@ -416,7 +469,7 @@ export default function SessionPage({
         },
 
         onAudioChunk: (chunk) => {
-          player.enqueue(chunk);
+          timelineRef.current.interviewerAudio(sinceStart(player.enqueue(chunk)));
           clearResponseWatchdog();
           setIsInterviewerSpeaking(true);
           if (interviewerSpeakingTimeoutRef.current) {
@@ -438,30 +491,25 @@ export default function SessionPage({
         onActivityEnd: () => {
           markActivityEnd();
           startResponseWatchdog();
-          // The reliable turn-boundary signal for the candidate — see
-          // flushAccumulatedTurn's comment on why this doesn't depend on
-          // the transcription API's own `finished` flag actually firing.
-          flushAccumulatedTurn("candidate", candidateAccRef);
         },
 
         onTurnComplete: () => {
           setIsInterviewerSpeaking(false);
-          flushAccumulatedTurn("interviewer", interviewerAccRef);
+          timelineRef.current.interviewerTurnEnd(sinceStart(player.playbackEndsAt()));
         },
 
         onInterrupted: () => {
           player.interrupt();
           setIsInterviewerSpeaking(false);
+          timelineRef.current.interviewerInterrupted(sinceStart());
         },
 
-        onInputTranscript: (text, finished) => {
-          console.log("[candidate]", text, finished ? "(final)" : "");
-          captureTranscriptChunk("candidate", candidateAccRef, text, finished);
+        onInputTranscript: (text) => {
+          timelineRef.current.candidateText(sinceStart(), text);
         },
 
-        onOutputTranscript: (text, finished) => {
-          console.log("[interviewer]", text, finished ? "(final)" : "");
-          captureTranscriptChunk("interviewer", interviewerAccRef, text, finished);
+        onOutputTranscript: (text) => {
+          timelineRef.current.interviewerText(sinceStart(), text);
         },
 
         onError: (error) => {
@@ -482,10 +530,9 @@ export default function SessionPage({
           // stop() lands on when it finishes.
           if (endingRef.current) return;
           if (!info.wasClean || info.code !== 1000) {
-            setErrorMessage(
-              `session closed: code ${info.code}${info.reason ? ` — ${info.reason}` : ""}`,
-            );
-            setStatus("error");
+            const kind = classifyLiveClose(info.code, info.reason);
+            reportEvent("live.closed_abnormally", { mode: "full", code: info.code, kind });
+            void abandonAfterDrop(describeLiveClose(info.code, info.reason) ?? "The connection closed.");
           } else {
             setStatus("idle");
           }
@@ -493,18 +540,20 @@ export default function SessionPage({
       });
 
       sessionRef.current = session;
+      void setupComplete.then(() => startInterviewerTurn(session));
 
       recorderRef.current = await startRecording(micStream, {
         onChunk: (chunk) => sendAudioChunk(session, chunk),
         onLocalActivityStart: () => {
           setIsCandidateSpeaking(true);
           cancelPendingActivityEnd();
+          timelineRef.current.candidateSpeechStart(sinceStart());
         },
         onLocalActivityEnd: () => {
           setIsCandidateSpeaking(false);
           markActivityEnd();
           startResponseWatchdog();
-          flushAccumulatedTurn("candidate", candidateAccRef);
+          timelineRef.current.candidateSpeechEnd(sinceStart());
         },
         onError: (error) => console.error("[recorder]", error),
       });
@@ -512,29 +561,38 @@ export default function SessionPage({
       console.error("[session start]", error);
       setErrorMessage(error instanceof Error ? error.message : String(error));
       setStatus("error");
+      // The call never started, so the row created for it would only be an
+      // empty "not started" entry in the history: remove it.
+      if (createdNow) {
+        void fetch(`/api/sessions/${createdNow}`, { method: "DELETE" });
+        sessionIdRef.current = null;
+        setSessionId(null);
+        window.history.replaceState(null, "", `/session/new${window.location.search}`);
+      }
       void stop();
     }
   }, [
+    appendTranscript,
     cancelPendingActivityEnd,
-    captureTranscriptChunk,
     clearResponseWatchdog,
     drillInfo.isDrill,
     drillInfo.questionIndex,
-    flushAccumulatedTurn,
     flushTurns,
     isRealSession,
     markActivityEnd,
+    sinceStart,
     stageId,
     startResponseWatchdog,
     stop,
   ]);
 
   const median = percentile(ttfaSamples, 0.5);
+  const getInterviewerLevel = useCallback(() => playerRef.current?.getLevel() ?? 0, []);
 
   return (
     <main className="flex flex-1 flex-col h-[calc(100vh-57px)] w-full overflow-hidden">
       <InterviewRoom
-        sessionId={sessionId}
+        sessionId={sessionId ?? "new"}
         isRealSession={isRealSession}
         status={status}
         onStart={() => void start()}
@@ -542,6 +600,7 @@ export default function SessionPage({
         transcript={transcript}
         isInterviewerSpeaking={isInterviewerSpeaking}
         isCandidateSpeaking={isCandidateSpeaking}
+        getInterviewerLevel={getInterviewerLevel}
         interviewerName={stageInfo?.persona?.name ?? "AI Interviewer"}
         interviewerRole={stageInfo?.persona?.role ?? "Technical Evaluator"}
         interviewerTone={stageInfo?.persona?.tone ?? "neutral"}
@@ -567,4 +626,24 @@ function percentile(samples: number[], p: number): number | null {
   const sorted = [...samples].sort((a, b) => a - b);
   const index = Math.min(sorted.length - 1, Math.floor(p * sorted.length));
   return sorted[index];
+}
+
+// Why the server refused a Live token, in words. The microphone was granted
+// but nothing was spent, so each says what to do next.
+function describeTokenRefusal(body: unknown): string | null {
+  const limit = describeLimitRefusal(body);
+  if (limit) return limit;
+  const error = body && typeof body === "object" ? (body as { error?: string }).error : undefined;
+  switch (error) {
+    case "unauthorized":
+      return "Your session has expired. Sign in again to start the interview.";
+    case "stage_locked":
+      return "This stage is still locked. Pass the previous stage first.";
+    case "smoke_test_disabled":
+      return "The voice connectivity test is turned off on this server. Start an interview from a roadmap instead.";
+    case "token_mint_failed":
+      return "The voice service didn't respond. Nothing was used — try again in a minute.";
+    default:
+      return null;
+  }
 }

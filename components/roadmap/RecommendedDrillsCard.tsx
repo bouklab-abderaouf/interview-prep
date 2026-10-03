@@ -104,7 +104,7 @@ export function RecommendedDrillsCard({
       {activeTab === "gaps" && (
         <div className="flex flex-col gap-3">
           {gaps.length === 0 ? (
-            <p className="text-xs text-zinc-500">No major CV gaps identified for this role.</p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">No major CV gaps identified for this role.</p>
           ) : (
             gaps.map((gap, index) => {
               // Find matching drill question if any
@@ -169,7 +169,7 @@ export function RecommendedDrillsCard({
                 <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
                   {drill.questionText}
                 </p>
-                <p className="text-[11px] text-zinc-500">
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
                   <span className="text-zinc-400">Probing:</span> {drill.targets}
                 </p>
               </div>

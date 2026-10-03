@@ -2,8 +2,11 @@ import { createClient } from "@supabase/supabase-js";
 
 // Service-role client — bypasses RLS entirely. Server-only: never import this
 // from a client component or expose SUPABASE_SERVICE_ROLE_KEY as NEXT_PUBLIC_.
-// Used by guardrails (usage_counters) and demo sessions (user_id = null rows
-// that no anon policy can reach — see specs §3).
+// Used by guardrails (usage_counters), demo sessions (user_id = null rows
+// that no anon policy can reach — see specs §3), account deletion
+// (app/api/account), which is the only thing that can remove an auth user,
+// and daily-limit refunds (lib/limits.ts), which users must not be able to
+// call themselves.
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

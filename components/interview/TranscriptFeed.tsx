@@ -28,7 +28,7 @@ export function TranscriptFeed({
 
   if (entries.length === 0) {
     return (
-      <div className={`flex flex-col items-center justify-center p-6 text-center text-xs text-zinc-500 ${className}`}>
+      <div className={`flex flex-col items-center justify-center p-6 text-center text-xs text-zinc-500 dark:text-zinc-400 ${className}`}>
         Live transcription will appear here as you speak.
       </div>
     );

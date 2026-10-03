@@ -1,9 +1,9 @@
+import Link from "next/link";
+
 import { BackLink } from "@/components/nav/BackLink";
+import { InterviewHistoryList } from "@/components/interview/InterviewHistoryList";
+import type { InterviewSummary } from "@/lib/interviews";
 import { createClient } from "@/lib/supabase/server";
-import {
-  InterviewHistoryList,
-  type InterviewHistoryItem,
-} from "@/components/interview/InterviewHistoryList";
 
 interface SessionRow {
   id: string;
@@ -12,6 +12,7 @@ interface SessionRow {
   started_at: string;
   duration_seconds: number | null;
   language: string;
+  usage: { drill?: boolean; targetQuestion?: string } | null;
 }
 
 interface StageRow {
@@ -29,13 +30,57 @@ interface RoadmapRow {
 // Every interview ever run, scored or not. Sessions have always been recorded
 // in Postgres; nothing ever showed them back to the person who ran them.
 export default async function InterviewsPage() {
+  const { items, readAt } = await loadInterviews();
+
+  // Sessions are newest first, so the first one with a roadmap is where the
+  // candidate was last practising.
+  const practiceHref = items.find((i) => i.roadmapId)?.roadmapId;
+
+  return (
+    <main className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-4 py-8 sm:px-8">
+      <div className="flex flex-col gap-4">
+        <BackLink href="/home">Home</BackLink>
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-semibold tracking-tight">Interviews</h1>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              Every session you&apos;ve started, newest first. Open one to see its scorecard.
+            </p>
+          </div>
+          <Link
+            href={practiceHref ? `/roadmap/${practiceHref}` : "/home"}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            Practise again <span aria-hidden>&rarr;</span>
+          </Link>
+        </header>
+      </div>
+
+      {items.length > 0 ? (
+        <InterviewHistoryList items={items} now={readAt} />
+      ) : (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-zinc-300 px-6 py-16 text-center dark:border-zinc-700">
+          <p className="font-medium">No interviews yet</p>
+          <p className="max-w-sm text-sm text-zinc-500 dark:text-zinc-400">
+            Open a roadmap and start a stage. Each interview you run shows up here with its score.
+          </p>
+        </div>
+      )}
+    </main>
+  );
+}
+
+// `readAt` is when the rows were read: "is this session still in progress?"
+// is a question about that snapshot, so the clock travels with the data.
+async function loadInterviews(): Promise<{ items: InterviewSummary[]; readAt: number }> {
   const supabase = await createClient();
+  const readAt = Date.now();
 
   // Demo sessions have a null user_id and are invisible under RLS anyway;
   // filtering on mode keeps the unguarded `/session/[id]` smoke tests out too.
   const { data: sessions } = await supabase
     .from("sessions")
-    .select("id, stage_id, status, started_at, duration_seconds, language")
+    .select("id, stage_id, status, started_at, duration_seconds, language, usage")
     .eq("mode", "full")
     .order("started_at", { ascending: false })
     .returns<SessionRow[]>();
@@ -83,55 +128,31 @@ export default async function InterviewsPage() {
     return acc;
   }, new Map());
 
-  const items: InterviewHistoryItem[] = (sessions ?? []).map((session) => {
+  const items: InterviewSummary[] = (sessions ?? []).map((session) => {
     const stage = session.stage_id ? stageById.get(session.stage_id) : undefined;
     const roadmap = stage ? roadmapById.get(stage.roadmap_id) : undefined;
     const scorecard = scorecardBySession.get(session.id);
-    const turns = turnsBySession.get(session.id) ?? 0;
-    const unscoredButRecoverable = !scorecard && turns > 0 && !!session.stage_id;
 
     return {
       id: session.id,
       stageTitle: stage?.title ?? "Voice loop test",
+      roadmapId: roadmap?.id,
       roadmapContext: roadmap
         ? `${roadmap.target_role}${roadmap.company ? ` at ${roadmap.company}` : ""}`
         : undefined,
       startedAt: session.started_at,
       durationSeconds: session.duration_seconds,
-      turns,
+      turns: turnsBySession.get(session.id) ?? 0,
       language: session.language,
       status: session.status,
+      drill: Boolean(session.usage?.drill),
+      targetQuestion: session.usage?.targetQuestion,
+      hasStage: Boolean(session.stage_id),
       scorecard: scorecard
-        ? {
-            overall: scorecard.overall,
-            stars: scorecard.stars,
-            xp_awarded: scorecard.xp_awarded,
-          }
+        ? { overall: scorecard.overall, stars: scorecard.stars, xp_awarded: scorecard.xp_awarded }
         : null,
-      unscoredButRecoverable,
     };
   });
 
-  return (
-    <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8">
-      <BackLink href="/home">Home</BackLink>
-
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Interviews</h1>
-        <p className="text-sm text-zinc-500">
-          {items.length} session{items.length === 1 ? "" : "s"}. Filter by status or recover
-          unscored sessions.
-        </p>
-      </header>
-
-      {items.length > 0 ? (
-        <InterviewHistoryList items={items} />
-      ) : (
-        <p className="text-sm text-zinc-500">
-          Nothing yet. Open a roadmap and start a stage to run your first interview.
-        </p>
-      )}
-    </main>
-  );
+  return { items, readAt };
 }
-

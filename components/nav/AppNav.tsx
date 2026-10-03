@@ -28,7 +28,7 @@ export function AppNav() {
             className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
               active
                 ? "bg-zinc-100 font-medium text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
-                : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
             }`}
           >
             {label}

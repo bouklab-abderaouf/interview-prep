@@ -150,14 +150,14 @@ export function SkillTree({ stages, progressByStageId }: SkillTreeProps) {
                 <button
                   type="button"
                   onClick={() => setSelectedId(null)}
-                  className="text-sm text-zinc-500 underline"
+                  className="text-sm text-zinc-500 dark:text-zinc-400 underline"
                 >
                   Close
                 </button>
               </div>
 
               {selected.description && (
-                <p className="text-sm text-zinc-500">{selected.description}</p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">{selected.description}</p>
               )}
 
               {selected.focus_areas.length > 0 && (
@@ -175,18 +175,18 @@ export function SkillTree({ stages, progressByStageId }: SkillTreeProps) {
 
               <dl className="flex gap-6 text-sm">
                 <div>
-                  <dt className="text-xs text-zinc-500">Best score</dt>
+                  <dt className="text-xs text-zinc-500 dark:text-zinc-400">Best score</dt>
                   <dd className="font-medium tabular-nums">
                     {selectedProgress?.best_score ?? "—"}
-                    <span className="text-xs font-normal text-zinc-500"> / pass {selected.pass_score}</span>
+                    <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400"> / pass {selected.pass_score}</span>
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-zinc-500">Attempts</dt>
+                  <dt className="text-xs text-zinc-500 dark:text-zinc-400">Attempts</dt>
                   <dd className="font-medium tabular-nums">{selectedProgress?.attempts ?? 0}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-zinc-500">Stars</dt>
+                  <dt className="text-xs text-zinc-500 dark:text-zinc-400">Stars</dt>
                   <dd className="font-medium text-amber-500">
                     {"★".repeat(selectedProgress?.stars ?? 0) || "—"}
                   </dd>
@@ -199,9 +199,9 @@ export function SkillTree({ stages, progressByStageId }: SkillTreeProps) {
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                       <span>⚡ Targeted Drills</span>
-                      <span className="text-[10px] font-normal text-zinc-500">(2m practice)</span>
+                      <span className="text-[10px] font-normal text-zinc-500 dark:text-zinc-400">(2m practice)</span>
                     </span>
-                    <span className="text-[10px] text-zinc-500">
+                    <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
                       {selected.question_bank.length} questions
                     </span>
                   </div>
@@ -213,7 +213,7 @@ export function SkillTree({ stages, progressByStageId }: SkillTreeProps) {
                       >
                         <div className="flex flex-1 flex-col gap-0.5">
                           <p className="font-medium text-zinc-800 dark:text-zinc-200">{q.text}</p>
-                          <p className="text-[10px] text-zinc-500">Probing: {q.targets}</p>
+                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Probing: {q.targets}</p>
                         </div>
                         <div className="self-end sm:self-center shrink-0">
                           <DrillButton
@@ -233,14 +233,14 @@ export function SkillTree({ stages, progressByStageId }: SkillTreeProps) {
                   <span className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
                     Full Stage Interview
                   </span>
-                  <span className="text-[10px] text-zinc-500">
+                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
                     10 min full evaluation
                   </span>
                 </div>
                 {selectedProgress?.unlocked ? (
                   <StartStageButton stageId={selected.id} label="Start Stage" />
                 ) : (
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
                     Locked — pass stage {selected.order_index} first.
                   </p>
                 )}

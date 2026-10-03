@@ -21,16 +21,12 @@ const HOW_IT_WORKS = [
 export default function LandingPage() {
   return (
     <main className="flex flex-1 flex-col items-center gap-16 px-6 py-16">
-      {/* Sign in link */}
-      <a href="/sign-in" className="self-end text-sm underline text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white">
-        Sign in
-      </a>
 
       <section className="flex max-w-2xl flex-col items-center gap-6 text-center">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
           Practice the interview out loud, before it counts.
         </h1>
-        <p className="text-sm text-zinc-500 max-w-lg">
+        <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-lg">
           Live AI interviews powered by Gemini Live API with sub-second interruption,
           tailored specifically to your CV and target role.
         </p>
@@ -58,14 +54,15 @@ export default function LandingPage() {
         </a>
       </section>
 
-      <section className="grid w-full max-w-3xl gap-8 sm:grid-cols-3">
+      {/* scroll-mt clears the sticky header when "How it works" jumps here. */}
+      <section id="how-it-works" className="grid w-full max-w-3xl scroll-mt-24 gap-8 sm:grid-cols-3">
         {HOW_IT_WORKS.map((step, index) => (
           <div key={step.title} className="flex flex-col gap-2 text-center">
             <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-full border border-zinc-400 text-sm font-medium">
               {index + 1}
             </div>
             <h2 className="font-medium">{step.title}</h2>
-            <p className="text-sm text-zinc-500">{step.body}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">{step.body}</p>
           </div>
         ))}
       </section>
@@ -74,7 +71,7 @@ export default function LandingPage() {
         href="https://github.com/bouklab-abderaouf/interview-prep"
         target="_blank"
         rel="noopener noreferrer"
-        className="text-sm underline text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+        className="text-sm underline text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-300"
       >
         View on GitHub &rarr;
       </a>

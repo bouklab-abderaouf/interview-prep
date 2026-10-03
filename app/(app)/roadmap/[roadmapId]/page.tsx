@@ -77,7 +77,7 @@ export default async function RoadmapPage({
               {roadmap.target_role}
               {roadmap.company ? ` at ${roadmap.company}` : ""}
             </h1>
-            <p className="text-sm text-zinc-500">Four stages. Clear one to unlock the next.</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">Four stages. Clear one to unlock the next.</p>
           </div>
           <DeleteRoadmapButton roadmapId={roadmap.id} redirectToHome label="Delete roadmap" />
         </div>
@@ -105,7 +105,7 @@ export default async function RoadmapPage({
            no stages. An empty skill tree is just a blank box, so explain it. */
         <div className="rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
           <p className="font-medium">No stages were built for this roadmap.</p>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
             The gap analysis didn&rsquo;t finish. Start over with your CV and the job description.
           </p>
           <div className="mt-4 flex items-center justify-center gap-4">

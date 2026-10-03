@@ -13,7 +13,7 @@ export function BackLink({ href, children }: BackLinkProps) {
   return (
     <Link
       href={href}
-      className="inline-flex w-fit items-center gap-1.5 text-sm text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-100"
+      className="inline-flex w-fit items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400 transition-colors hover:text-zinc-900 dark:hover:text-zinc-100"
     >
       <span aria-hidden>&larr;</span>
       {children}

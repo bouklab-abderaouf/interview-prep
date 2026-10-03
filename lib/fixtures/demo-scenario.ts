@@ -6,12 +6,19 @@
 // automates finding these; here they're just written in by hand.
 
 export interface DemoScenario {
+  // The interviewer has to have the same name on screen and in its own
+  // introduction. Gender-neutral on purpose: every session uses the same
+  // voice (lib/live/config.ts).
+  interviewerName: string;
+  interviewerRole: string;
   candidateName: string;
   cvSummary: string;
   jdSummary: string;
 }
 
 export const demoScenario: DemoScenario = {
+  interviewerName: "Camille",
+  interviewerRole: "Tech recruiter at Northwind Labs",
   candidateName: "Alex Moreau",
   cvSummary:
     "Alex Moreau, Frontend Engineer, 4 years of experience. Currently at Bramblewick Retail (1.5 years): rebuilt the checkout flow in React and TypeScript, cutting cart abandonment by 12%. Before that, 6 months at Kindling Labs, a seed-stage startup that shut down. There is an unexplained 8-month gap on the CV between Kindling Labs and the previous role. Earlier: 2 years at Verdant Systems building and maintaining an internal design system with React, Redux, and Jest. Comfortable with basic Docker for local dev environments. No production Kubernetes or CI/CD pipeline ownership experience.",

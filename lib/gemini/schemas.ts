@@ -121,6 +121,20 @@ export const Scorecard = z.object({
       }),
     )
     .max(3),
+  // One entry per substantive question actually asked. Flat on purpose — no
+  // array inside it — so Scorecard stays clear of the structured-output
+  // complexity budget GapAnalysis ran into.
+  per_question: z
+    .array(
+      z.object({
+        question: z.string(),
+        // 0-based index into the stage's question bank, -1 if it wasn't one
+        bank_index: z.number(),
+        score: z.number(),
+        verdict: z.string(),
+      }),
+    )
+    .max(10),
 });
 
 export type Scorecard = z.infer<typeof Scorecard>;

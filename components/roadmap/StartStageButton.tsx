@@ -9,32 +9,17 @@ interface StartStageButtonProps {
   label?: string;
 }
 
-// specs §8.1 — the skill tree's "Start" action. POST /api/sessions, then
-// navigate to the interview room. Kept as its own client component so the
-// sheet around it stays presentational.
+// specs §8.1 — the skill tree's "Start" action: opens the interview room.
+// The session row is created by the room when the call actually starts —
+// creating it here left an empty "active" session behind every time someone
+// opened the room and changed their mind (production readiness phase 6).
 export function StartStageButton({ stageId, label = "Start" }: StartStageButtonProps) {
   const router = useRouter();
-  const [status, setStatus] = useState<"idle" | "starting" | "error">("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
 
-  const handleClick = async () => {
-    setStatus("starting");
-    setErrorMessage(null);
-    try {
-      const res = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stageId }),
-      });
-      const body = await res.json().catch(() => ({}) as { sessionId?: string; error?: string });
-      if (!res.ok || !body.sessionId) {
-        throw new Error(body.error ?? `sessions endpoint returned ${res.status}`);
-      }
-      router.push(`/session/${body.sessionId}?stageId=${stageId}`);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-      setStatus("error");
-    }
+  const handleClick = () => {
+    setOpening(true);
+    router.push(`/session/new?stageId=${encodeURIComponent(stageId)}`);
   };
 
   return (
@@ -42,12 +27,11 @@ export function StartStageButton({ stageId, label = "Start" }: StartStageButtonP
       <button
         type="button"
         onClick={handleClick}
-        disabled={status === "starting"}
+        disabled={opening}
         className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
       >
-        {status === "starting" ? "Starting..." : label}
+        {opening ? "Opening…" : label}
       </button>
-      {errorMessage && <p className="text-xs text-red-600">{errorMessage}</p>}
     </div>
   );
 }

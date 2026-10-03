@@ -9,6 +9,7 @@ import { SessionTimer } from "@/components/interview/SessionTimer";
 import { AudioVisualizer } from "@/components/interview/AudioVisualizer";
 import { TranscriptFeed, type TranscriptEntry } from "@/components/interview/TranscriptFeed";
 import { ScoreSessionButton } from "@/components/interview/ScoreSessionButton";
+import { GEMINI_TIER } from "@/lib/legal";
 
 interface InterviewRoomProps {
   sessionId: string;
@@ -19,6 +20,8 @@ interface InterviewRoomProps {
   transcript: TranscriptEntry[];
   isInterviewerSpeaking: boolean;
   isCandidateSpeaking: boolean;
+  /** Live loudness of the interviewer's voice, for the avatar's mouth. */
+  getInterviewerLevel?: () => number;
   interviewerName?: string;
   interviewerRole?: string;
   interviewerTone?: "warm" | "neutral" | "skeptical";
@@ -45,6 +48,7 @@ export function InterviewRoom({
   transcript,
   isInterviewerSpeaking,
   isCandidateSpeaking,
+  getInterviewerLevel,
   interviewerName = "Interviewer",
   interviewerRole = "Lead Evaluator",
   interviewerTone = "neutral",
@@ -86,7 +90,9 @@ export function InterviewRoom({
               {stageTitle}
               {company ? ` · ${company}` : targetRole ? ` · ${targetRole}` : ""}
             </h1>
-            <span className="text-[11px] text-zinc-500">Session {sessionId.slice(0, 8)}</span>
+            <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              {sessionId === "new" ? "New session" : `Session ${sessionId.slice(0, 8)}`}
+            </span>
           </div>
         </div>
 
@@ -115,7 +121,7 @@ export function InterviewRoom({
             {lastTtfa !== null && lastTtfa !== undefined ? `${Math.round(lastTtfa)}ms` : "—"}
           </span>
           {medianTtfa !== null && medianTtfa !== undefined && (
-            <span className="hidden text-[10px] text-zinc-500 md:inline">
+            <span className="hidden text-[10px] text-zinc-500 dark:text-zinc-400 md:inline">
               (med {Math.round(medianTtfa)}ms)
             </span>
           )}
@@ -150,6 +156,18 @@ export function InterviewRoom({
         </div>
       )}
 
+      {/* specs §9 — EU AI Act Art. 50 transparency. The persona has a human
+          name and a 3D face, so say plainly, before Start, that it's an AI. */}
+      {status === "idle" && (
+        <div className="border-b border-blue-800/40 bg-blue-950/40 px-6 py-2 text-center text-xs text-blue-200">
+          You&apos;ll be speaking with an AI interviewer, not a person.
+          {isRealSession && ` ${interviewerName} is a simulated persona generated for this stage.`} Your
+          voice goes to Google&apos;s Gemini API during the session and the transcript is saved to your
+          account
+          {GEMINI_TIER === "free" ? " (on Gemini's free tier, Google may use it to improve its models)" : ""}.
+        </div>
+      )}
+
       {/* ── Stalled Warning & Error Banners ──────────────────────── */}
       {stalledWarning && (
         <div className="bg-amber-950/80 border-b border-amber-800/60 px-6 py-2 text-center text-xs text-amber-200">
@@ -170,19 +188,29 @@ export function InterviewRoom({
           <div className="relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-800/90 bg-gradient-to-b from-zinc-900 to-zinc-950 shadow-2xl">
             {/* Interviewer Badges */}
             <div className="absolute top-4 left-4 z-10 flex flex-col gap-0.5 rounded-xl bg-black/60 px-3 py-1.5 backdrop-blur-md">
-              <span className="text-xs font-semibold text-zinc-100">{interviewerName}</span>
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-zinc-100">
+                {interviewerName}
+                <span className="rounded bg-blue-500/20 px-1 py-px text-[9px] font-bold uppercase tracking-wider text-blue-300">
+                  AI
+                </span>
+              </span>
               <span className="text-[10px] text-zinc-400">{interviewerRole}</span>
             </div>
 
             <div className="absolute top-4 right-4 z-10 flex items-center gap-2 rounded-xl bg-black/60 px-2.5 py-1 text-[11px] text-zinc-300 backdrop-blur-md">
               <span className="capitalize">{interviewerTone}</span>
-              <span className="text-zinc-500">·</span>
+              <span className="text-zinc-500 dark:text-zinc-400">·</span>
               <span>Strictness {strictness}/5</span>
             </div>
 
             {/* 3D WebGL Avatar */}
             <div className="relative flex-1 w-full h-full flex items-center justify-center">
-              <Avatar3D isSpeaking={isInterviewerSpeaking} tone={interviewerTone} />
+              <Avatar3D
+                isSpeaking={isInterviewerSpeaking}
+                tone={interviewerTone}
+                getLevel={getInterviewerLevel}
+                seed={interviewerName}
+              />
             </div>
 
             {/* Speaking Audio Indicator Strip */}
@@ -221,7 +249,7 @@ export function InterviewRoom({
               <button
                 type="button"
                 onClick={() => setShowCaptions(false)}
-                className="text-xs text-zinc-500 hover:text-zinc-300"
+                className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-300"
               >
                 Hide
               </button>
@@ -301,7 +329,7 @@ export function InterviewRoom({
         </div>
 
         {/* Right: Stage prompt summary */}
-        <div className="hidden items-center gap-2 text-xs text-zinc-500 sm:flex">
+        <div className="hidden items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400 sm:flex">
           <span>Sub-second voice dialog · Barge-in active</span>
         </div>
       </footer>

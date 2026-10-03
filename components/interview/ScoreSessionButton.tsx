@@ -3,9 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { describeLimitRefusal } from "@/lib/limit-messages";
+
 interface ScoreSessionButtonProps {
   sessionId: string;
   label?: string;
+  /** "sm" for list rows */
+  size?: "md" | "sm";
 }
 
 // A completed interview whose scoring call failed used to be a dead end: the
@@ -13,7 +17,7 @@ interface ScoreSessionButtonProps {
 // scorecard again, so one transient Gemini 503 permanently cost an 11-minute
 // session its result. Scoring is idempotent server-side, so this is safe to
 // press repeatedly and safe to offer on any unscored session.
-export function ScoreSessionButton({ sessionId, label = "Score this interview" }: ScoreSessionButtonProps) {
+export function ScoreSessionButton({ sessionId, label = "Score this interview", size = "md" }: ScoreSessionButtonProps) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "scoring" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -25,11 +29,7 @@ export function ScoreSessionButton({ sessionId, label = "Score this interview" }
       const res = await fetch(`/api/sessions/${sessionId}/score`, { method: "POST" });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        throw new Error(
-          body.error === "scoring_failed"
-            ? "The scoring model is busy right now. Your interview is saved — try again in a minute."
-            : (body.error ?? `scoring failed with ${res.status}`),
-        );
+        throw new Error(describeLimitRefusal(body) ?? describeScoringFailure(body.error, res.status));
       }
       router.push(`/scorecard/${sessionId}`);
     } catch (error) {
@@ -39,16 +39,35 @@ export function ScoreSessionButton({ sessionId, label = "Score this interview" }
   };
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className={`flex flex-col gap-1 ${size === "sm" ? "items-end" : "items-start"}`}>
       <button
         type="button"
         onClick={handleClick}
         disabled={status === "scoring"}
-        className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+        className={`rounded-lg bg-zinc-900 font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200 ${
+          size === "sm" ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm"
+        }`}
       >
         {status === "scoring" ? "Scoring…" : label}
       </button>
-      {errorMessage && <p className="text-xs text-red-600">{errorMessage}</p>}
+      {errorMessage && (
+        <p className={`text-xs text-red-600 dark:text-red-400 ${size === "sm" ? "max-w-48 text-right" : ""}`}>{errorMessage}</p>
+      )}
     </div>
   );
+}
+
+// The scoring route's failures, in words. The interview is saved in every
+// case, so each says when trying again makes sense.
+export function describeScoringFailure(error: string | undefined, status: number): string {
+  switch (error) {
+    case "model_busy":
+      return "The scoring model is overloaded right now. Your interview is saved — try again in a minute.";
+    case "quota_exceeded":
+      return "Today's scoring quota is used up. Your interview is saved — try again later today or tomorrow.";
+    case "scoring_failed":
+      return "Scoring failed. Your interview is saved — try again in a minute.";
+    default:
+      return error ?? `Scoring failed (error ${status}). Your interview is saved.`;
+  }
 }

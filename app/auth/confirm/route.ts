@@ -33,14 +33,34 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient();
 
+  // Supabase's hosted /verify page reports its own failures (e.g. an expired
+  // link) as ?error_code=... instead of a code.
+  let errorCode = searchParams.get("error_code");
+
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) return NextResponse.redirect(redirectTo);
+    errorCode = error.code ?? error.message;
   } else if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) return NextResponse.redirect(redirectTo);
+    errorCode = error.code ?? error.message;
   }
 
+  console.error("[auth/confirm] sign-in link failed:", errorCode ?? "no code or token_hash");
+
+  // Tell /sign-in which failure it was. "browser" is the PKCE one: the code
+  // verifier lives in a cookie of the browser that requested the link, so
+  // the link fails if opened elsewhere, if a newer request replaced the
+  // verifier, or if the request errored client-side (supabase-js deletes the
+  // verifier on any error, even when Supabase did send the email).
+  const reason =
+    errorCode === "pkce_code_verifier_not_found" || errorCode === "bad_code_verifier"
+      ? "browser"
+      : errorCode === "otp_expired" || errorCode === "flow_state_expired"
+        ? "expired"
+        : "link";
   redirectTo.pathname = "/sign-in";
+  redirectTo.search = `?error=${reason}`;
   return NextResponse.redirect(redirectTo);
 }

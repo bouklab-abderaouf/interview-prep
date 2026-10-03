@@ -1,0 +1,82 @@
+# Runs on every push and pull request. Costs no Gemini or Supabase quota:
+# unit tests use fakes, and the browser tests build the app with placeholder
+# credentials (see playwright.config.ts). No secrets are needed.
+name: CI
+
+# Every push to any branch, so a branch is tested before a pull request
+# exists; pull requests from this repo would only repeat that run, so only
+# pull requests from forks get their own.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, lint, unit tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test
+
+  e2e:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  e2e-auth:
+    name: Signed-in browser tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    env:
+      SUPABASE_CLI: supabase
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # A throwaway local Supabase in Docker, with supabase/migrations applied.
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - run: supabase start
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:auth
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report-auth
+          path: |
+            playwright-report-auth/
+            test-results-auth/
+          retention-days: 7

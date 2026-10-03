@@ -7,6 +7,7 @@ export const sampleScorecard = {
   stars: 2,
   xp_awarded: 132,
   star: { situation: 82, task: 75, action: 80, result: 70 },
+  relevance: 81,
   communication: {
     clarity: 74,
     pace_wpm: 152,
@@ -40,12 +41,33 @@ export const sampleScorecard = {
         "At Bramblewick Retail, I disagreed with moving checkout state into Redux mid-migration. I raised it in a design review with a smaller diff showing local state would cut the change by half, we agreed to try it on one flow first, and it shipped a week faster than the original plan would have.",
     },
   ],
-  turns: [
-    { role: "interviewer", transcript: "Tell me about a project you're proud of." },
+  per_question: [
     {
-      role: "candidate",
+      question: "Tell me about a project you're proud of.",
+      bank_index: 0,
+      score: 86,
+      verdict: "Clear ownership and a measurable result, delivered in under a minute.",
+    },
+    {
+      question: "How would you scale the checkout service for a flash sale?",
+      bank_index: 3,
+      score: 58,
+      verdict: "Named the right components but never committed to a tradeoff.",
+    },
+  ],
+  turns: [
+    {
+      role: "interviewer" as const,
+      transcript: "Tell me about a project you're proud of.",
+      start_ms: 4200,
+      end_ms: 7100,
+    },
+    {
+      role: "candidate" as const,
       transcript:
         "I rebuilt the checkout flow in React and TypeScript, which cut cart abandonment by twelve percent.",
+      start_ms: 9500,
+      end_ms: 16800,
     },
   ],
 };

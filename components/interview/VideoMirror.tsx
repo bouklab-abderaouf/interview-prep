@@ -119,7 +119,7 @@ export function VideoMirror({
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium text-zinc-200">{candidateName}</span>
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
               {errorMessage ?? "Camera is turned off"}
             </span>
           </div>

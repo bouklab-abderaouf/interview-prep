@@ -17,8 +17,19 @@ const PROTECTED_PREFIXES = [
   "/scorecard",
 ];
 
-export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+// `forwardHeaders` are added to the request the app renders with — proxy.ts
+// passes the CSP and its nonce this way, which is how Next.js finds the
+// nonce for its own scripts.
+export async function updateSession(request: NextRequest, forwardHeaders: Record<string, string> = {}) {
+  // Rebuilt from request.headers each time: cookies set below are written
+  // into request.headers, and the forwarded request must carry them.
+  const next = () => {
+    const headers = new Headers(request.headers);
+    for (const [name, value] of Object.entries(forwardHeaders)) headers.set(name, value);
+    return NextResponse.next({ request: { headers } });
+  };
+
+  let supabaseResponse = next();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -30,7 +41,7 @@ export async function updateSession(request: NextRequest) {
         },
         setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = next();
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),
           );

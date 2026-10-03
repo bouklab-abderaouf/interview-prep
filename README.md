@@ -42,10 +42,22 @@ reachable only by typing its URL: no shell, no back links, no list of past
 interviews, no list of uploaded documents, and signing back in dropped you
 into the wizard that builds a *new* roadmap rather than anywhere you'd been.
 
-**Phase 5** (shipping & polish) is built: automatic cleanup on failed analyses,
-roadmap and document deletion APIs with confirmation UI, interview history
-status filtering with quick scoring recovery, and a polished landing page with
-an interactive voice & scorecard preview and repository link.
+**Phase 5** (ship) is partly built. Done: automatic cleanup on failed
+analyses, roadmap and document deletion with confirmation UI, interview
+history status filtering with quick scoring recovery, a landing page with an
+interactive voice & scorecard preview and repository link, the AI disclosure
+before every session, the upload-page privacy notice, and full account
+deletion. Still open from specs §9: the demo reel, error monitoring, an uptime
+check, and the three real interview preps — see [Roadmap](#roadmap).
+
+**Hardening** (unspecced, like Navigation). The repo had no tests at all; it
+now has unit, route-handler, component and browser tests plus CI, all at
+zero API quota — see [Testing](#testing). Alongside: interviews can be
+deleted (one at a time, or every empty session at once), `/interviews` was
+rebuilt around what actually happened in each session, times show in the
+viewer's own time zone instead of UTC, there's a System / Light / Dark
+switch, a sign-in page that explains failed links, and dark-mode text
+contrast now meets WCAG AA.
 
 ## What's here right now
 
@@ -62,7 +74,9 @@ an interactive voice & scorecard preview and repository link.
 - **Real stage-driven interviews.** Once a roadmap exists, `/session/[id]`
   runs an authenticated, gated interview built from that stage's actual
   persona and question bank, captures the transcript with per-turn
-  timestamps, and scores it into a scorecard on completion — STAR
+  timestamps, and scores it into a scorecard on completion — pass mark and
+  what it unlocks, attempt history, per-question scores with "drill this"
+  links, STAR
   breakdown, deterministic communication metrics, grounded strengths and
   improvements, model answers, and XP/stage-unlock progression.
 - **Virtual Video Interview Room (Mirror Practice + 3D Avatar).** `/session/[id]`
@@ -76,7 +90,8 @@ an interactive voice & scorecard preview and repository link.
   directly from stage question banks or the Recommended Drills card on the
   roadmap. Features dedicated drill arcs (`DRILL_ARC`) with 1 targeted follow-up
   probe, a dedicated in-room question HUD, focused STAR evaluation, and tailored
-  model answers grounded in your CV.
+  model answers grounded in your CV. Drills earn XP but never touch stage
+  progress — see Architecture.
 - **A gamified roadmap.** `/roadmap/[id]` draws the four stages as a
   serpentine skill tree — grey/locked with a lock icon, blue/pulsing when
   available, amber with stars once attempted — over a progress path that
@@ -88,6 +103,23 @@ an interactive voice & scorecard preview and repository link.
   Interviews / Documents, an explicit back link on every leaf page, a hub
   listing your roadmaps and recent interviews, a full interview history with
   scores, and a document list with signed links to the CVs you uploaded.
+- **Your data, deletable.** The upload page says what happens to a CV, how
+  long it's kept and how to delete it; roadmaps (with their interviews and
+  documents) can be deleted from Home or the roadmap page, single interviews
+  from `/interviews`, and `/documents` deletes the whole account.
+- **An interview history that tells you something.** `/interviews` leads
+  with your latest score, the change since the previous interview, a trend
+  line, your best score and time practised; then every session grouped by
+  day, filterable by state and roadmap, each labelled by what happened
+  (scored, needs scoring, in progress, not started) rather than by a status
+  column that said "Active" for weeks.
+- **Light and dark.** System / Light / Dark from the header, remembered per
+  browser and rendered by the server, so there's no flash of the wrong
+  theme.
+- **AI disclosure.** Both the demo and the interview room say "You'll be
+  speaking with an AI interviewer, not a person" before a session starts, the
+  interviewer tile carries a permanent AI label, and the prompt forbids the
+  persona from claiming to be human (specs §9, EU AI Act Art. 50).
 - **A full Postgres schema** (Supabase), RLS enabled on every table from the
   first migration, not retrofitted.
 
@@ -156,14 +188,21 @@ an interactive voice & scorecard preview and repository link.
   interrogation rather than an interview. The same block tells it to call out
   a non-answer and re-ask instead of accepting it — that same session replied
   "D'accord, je vois" to a candidate who had only said "Bonjour".
-- **Turn capture.** `inputAudioTranscription`/`outputAudioTranscription`
-  arrive as incremental deltas, not full turn text — concatenated per-role
-  and timestamped relative to session start. A turn closes out on
-  activity-end for the candidate and `turnComplete` for the interviewer —
-  signals already proven reliable — not solely on the transcription API's
-  own `finished` flag, which turned out not to reliably fire in practice
-  (a real bug: a full interview produced zero captured turns before this
-  was found). A response watchdog separately flags when the interviewer
+- **Turn capture.** Timing comes from audio, words from transcription —
+  `lib/live/turn-timeline.ts`. Turns used to be stamped with the arrival
+  time of their first transcription delta, but the Live API delivers the
+  candidate's transcription late, right as the interviewer starts replying:
+  a real 7-minute session had every candidate turn starting within 1ms of
+  the interviewer turn beside it, so pauses came out negative ("longest
+  pause 0.0s") and a 112-word answer was timed at 4.6s. The candidate is now
+  timed by the local energy VAD, the interviewer by when its audio is
+  scheduled to start and finish playing (cut short on barge-in), and an
+  answer is committed once the reply to it ends — by which point its late
+  transcription has arrived. Scorecards recorded before the fix are
+  detected by their overlapping turns and hide the timing metrics rather
+  than show wrong ones. (Before that, turns closed on the transcription
+  API's own `finished` flag, which doesn't reliably fire — a full interview
+  once produced zero captured turns.) A response watchdog separately flags when the interviewer
   goes silent for 12s after the candidate stops talking — usually a Live
   API free-tier quota issue, confirmed by bisecting directly against the
   API, not a prompt problem. Flushed to Postgres on a 60s safety timer, on
@@ -182,6 +221,18 @@ an interactive voice & scorecard preview and repository link.
   every request and hands the client plain data. Unlocking is decided by
   `/api/sessions/[id]/score` writing `progress`, never by the UI. The one
   piece of client state is which node's sheet is open.
+- **Drills don't move the skill tree.** A drill is one question and one
+  follow-up, scored against that question alone, so it awards XP and updates
+  the streak but never writes `progress`. It used to go through the same path
+  as a full interview, which meant one good 2-minute answer could set a
+  stage's best score and stars and unlock the next stage outright.
+- **Account deletion.** `DELETE /api/account` empties the user's folder in
+  the `cvs` bucket first (listing the folder, not trusting
+  `documents.storage_path`, so leftovers from a failed analysis go too), then
+  deletes the auth user with the service-role client; every user-owned table
+  cascades from `auth.users`. Storage goes first because it has no cascade: if
+  that step fails, the account is left intact to retry rather than deleted
+  with its CVs still in the bucket.
 - **Navigation.** `/home` is the hub and the post-sign-in landing page; it
   redirects to `/onboarding` only when you have no roadmaps at all, so the
   wizard is the first-run screen rather than the front door. Back links name
@@ -217,8 +268,18 @@ an interactive voice & scorecard preview and repository link.
 | Back navigation | Explicit `href` per page, never `router.back()` | The scorecard is reachable from two directions, one of which is a redirect off a closed session |
 | List page joins | Separate queries merged in JS, not PostgREST embedding | `scorecards.session_id` is unique, so an embed's result shape depends on relationship detection; these tables are tiny |
 | Interview arc | Enforced in the interviewer prompt, and the bank is ordered at generation time | The prompt fix reaches roadmaps that already exist; the generation fix only reaches new ones |
-| Scoring retries | 4 attempts server-side, plus a manual retry in the UI | Each automatic retry spends one of 20 daily free-tier requests; a deliberate retry is cheaper than a speculative one |
+| Scoring retries | 3 attempts per model, then the fallback model, plus a manual retry in the UI | Each automatic retry spends one of the model's daily free-tier requests; a deliberate retry is cheaper than a speculative one |
+| Scorecard charts | Labelled 0–100 bars, not a radar | Four unlabelled spokes hid the actual numbers; bars show them and made `recharts` unnecessary |
+| Avatar | Procedural Three.js bust, mouth driven by output loudness | No external model files or licences, light enough for phones; the look is seeded from the persona name, never inferred from it |
+| Text-model fallback | `GEMINI_TEXT_FALLBACK_MODEL` on 503 (after a retry) or 429 (at once) | Free-tier quotas are per model and 503s count against them: two analyses that got 3 × 503 each left `gemini-3.6-flash` at 5/5 RPM and 12/20 RPD. A second model is a different capacity pool and a separate quota |
 | Question-bank arc | Encoded as array order, not a `phase` field per question | `GapAnalysis` already sits at Gemini's undocumented structured-output complexity budget; another field risks re-triggering the 400 |
+| Drill scoring | XP and streak only, no `progress` write | A single-question drill isn't evidence about a whole stage, and letting it unlock one bypassed the interview the tree gates |
+| Account deletion | Delete the auth user and let FKs cascade, storage cleared first | One source of truth for "what belongs to a user"; storage is the only thing the cascade can't reach |
+| Deleting an interview | Removes the transcript and scorecard; XP and stage progress stay | Recomputing them from what's left would let a deletion re-lock a stage mid-roadmap |
+| "Is this session in progress?" | Active *and* under 30 minutes old with nothing recorded | The row is created when the room opens, so status alone left idle visits "Active" forever |
+| Displayed times | UTC on the server, the viewer's zone after hydration (`<LocalTime>`) | The server can't know the zone; rendering local time there breaks hydration, rendering UTC everywhere showed 20:10 as 18:10 |
+| Theme storage | Cookie, read by the root layout | The server renders `<html class="dark">` itself: no inline script, no flash, no hydration mismatch |
+| Browser tests | Production build with placeholder credentials; Gemini routes fail the test | Tests must never spend quota or touch real data, by construction rather than by care |
 
 ## Setup
 
@@ -239,20 +300,43 @@ Fill in `.env.local`:
   values against a live `models.list` call for your account before relying
   on the checked-in defaults. Model availability varies by project and
   changes over time; this repo has already hit both mid-build.
+- **`GEMINI_TEXT_FALLBACK_MODEL`** — optional. Used for gap analysis and
+  scoring when `GEMINI_TEXT_MODEL` is overloaded or out of quota; a Flash Lite
+  model has 25× the free-tier daily requests of a Flash one. Verify it
+  accepts the `GapAnalysis` schema before relying on it (see the complexity
+  budget in Known gaps).
 - **`NEXT_PUBLIC_SUPABASE_URL`**, **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**,
   **`SUPABASE_SERVICE_ROLE_KEY`** — from your Supabase project's API
-  settings. Apply the migrations in `supabase/migrations/` in order.
+  settings. Apply the migrations in `supabase/migrations/` in order. The
+  service-role key is used for the demo's guardrails, account deletion,
+  daily-limit refunds and the retention job only.
 - **`TURNSTILE_SECRET_KEY`**, **`NEXT_PUBLIC_TURNSTILE_SITE_KEY`** — from the
   [Cloudflare Turnstile dashboard](https://dash.cloudflare.com). Required
   for the `/demo` guardrails; without them the demo fails closed rather than
   letting traffic through unverified.
 - **`IP_HASH_SALT`** — any random string. Not from the original spec's env
   list verbatim, but required to compute `sessions.ip_hash`.
+- **Everything else** — per-user daily limits (`USER_MAX_*`), the Gemini
+  tier (`NEXT_PUBLIC_GEMINI_TIER`, which drives every notice about Google's
+  use of data), error tracking (`NEXT_PUBLIC_SENTRY_DSN`), the legal notice
+  (`NEXT_PUBLIC_LEGAL_*`), the retention job (`CRON_SECRET`) and the
+  operational switches are listed with defaults in `.env.local.example`
+  and explained in [docs/RUNBOOK.md](docs/RUNBOOK.md). Deploying:
+  [docs/LAUNCH.md](docs/LAUNCH.md).
 
-One manual dashboard step `.env` can't cover: in Supabase, under
-**Auth → Emails → Magic Link**, change the confirmation link to
-`{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email` so it
-matches `app/auth/confirm/route.ts`.
+Magic links work with Supabase's default email template, with two catches
+worth knowing: the link only works **in the browser that requested it**
+(PKCE keeps a verifier cookie there), and only the most recent link works.
+If the request errors in the browser — even when Supabase did send the email
+— supabase-js deletes that verifier and the email's link can't be used.
+`/sign-in` explains each of these when it happens.
+
+To make links work in any browser or device, switch the Magic Link and
+Confirm Signup templates to
+`{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email` —
+`app/auth/confirm/route.ts` already handles that shape. Supabase only lets
+you edit templates once **custom SMTP** is configured (Authentication →
+Emails), which also lifts the built-in sender's low hourly limit.
 
 ```bash
 npm run dev
@@ -268,16 +352,33 @@ npm run dev
   permission, a 2-minute countdown.
 - `/sign-in` → `/home` — sign in with a magic link. First-time users are
   forwarded to `/onboarding` to upload a CV and paste a job description.
+  A failed link comes back here with the reason (`?error=browser|expired|link`).
 - `/home` — the hub: XP and streak, your roadmaps with per-stage progress,
-  and your five most recent interviews.
-- `/interviews` — every session you've run, scored or not, with duration,
-  turn count and score. Scored rows open their scorecard.
+  and your five most recent scored interviews.
+- `/interviews` — a progress summary, then every session you've started,
+  grouped by day and filterable by state and roadmap. Scored rows open their
+  scorecard, unscored ones with answers can be scored, and any of them can be
+  deleted — empty ones all at once.
 - `/documents` — the CVs and job descriptions behind each roadmap. CVs get a
-  one-hour signed URL; the `cvs` bucket is private.
+  one-hour signed URL; the `cvs` bucket is private. The "Your data" section
+  at the bottom deletes the account.
 - `/roadmap/[roadmapId]` — the skill tree: XP bar, streak, four stage nodes,
   and the Start button that creates a session and drops you into the
   interview room.
 - `/sample-scorecard` — the scorecard UI on a fixture, no auth needed.
+
+## Testing
+
+```bash
+npm run check      # typecheck + lint + unit/component tests (~15s)
+npm run test:e2e   # browser tests against a fresh production build (~1.5 min)
+```
+
+None of it spends Gemini quota or touches the real Supabase project: unit
+and route tests use fakes, and the browser tests build the app with
+placeholder credentials and fail if a page so much as requests a token. CI
+runs both on every push and pull request. What each layer covers, how to
+write a route test, and what isn't covered: [docs/TESTING.md](docs/TESTING.md).
 
 ## Known gaps and risks
 
@@ -318,14 +419,13 @@ npm run dev
   the one session scored since — rather than 66. Backfilling from existing
   `scorecards` would be a few lines; it isn't worth doing for two throwaway
   test sessions.
-- **A failed `/api/analyze` attempt leaves an orphaned `roadmaps` row.**
-  Documents and the roadmap insert happen before stages; if anything after
-  that fails, there's no cleanup. This stopped being invisible once the app
-  grew list pages — a real account has one such roadmap and several unlinked
-  documents — so `/home`, `/roadmap/[id]` and `/documents` all detect the
-  zero-stage case and say "analysis didn't finish" instead of rendering a
-  dead card or an empty skill tree. Labelling it is not fixing it: the rows
-  still want a transaction or a cleanup pass.
+- **Failed analyses clean up after themselves, but not atomically.**
+  `/api/analyze` now removes the stored CV, documents and roadmap row when a
+  later step fails, as a sequence of best-effort deletes rather than a
+  transaction. Leftovers from before that existed — and anything a cleanup
+  step itself fails to remove — are still labelled "analysis didn't finish"
+  on `/home`, `/roadmap/[id]` and `/documents`, and can be discarded from
+  there.
 - **The Gemini structured-output complexity budget is undocumented.** The
   two-call split works for `GapAnalysis`; `Scorecard` stays one call
   because it's shallow enough not to hit the same budget. If either schema
@@ -352,10 +452,10 @@ npm run dev
   scorecard of mine", and as of the 6m43s session there finally is one worth
   showing — `lib/fixtures/sample-scorecard.ts` just hasn't been swapped for
   it yet. Doing so means deciding how much of a real transcript to publish.
-- **Nothing can be deleted or renamed from the UI.** The document and roadmap
-  lists are read-only: no delete, no rename, no re-analyze against an updated
-  CV. Failed analyses leave orphaned rows (below), and the lists now label
-  them rather than hiding them, but clearing them out still means SQL.
+- **Nothing can be renamed or re-analyzed.** Roadmaps, unlinked documents and
+  the whole account can be deleted from the UI, but there's no rename and no
+  way to re-run the analysis against an updated CV short of deleting the
+  roadmap and starting over.
 - **Roadmaps built before the arc fix still have gap-first question banks.**
   The generation prompt now requires the first question to be a broad opener
   and the pointed ones to come last, but that only affects roadmaps analysed
@@ -365,12 +465,20 @@ npm run dev
   own, which covers the symptom (verified: it now opens with a proper
   introduction against that exact bank), but the stored data is still wrong
   and a re-analysis is the real fix.
-- **The interview history has no filtering or pagination.** Every session is
-  rendered in one list, newest first. Fine at five sessions; not at five
-  hundred.
-- **The demo reel and GitHub link on the landing page are placeholders.**
-  The reel is recorded now that Phase 3's scorecards exist to show off, but
-  hasn't been; the repo link needs to be filled in by hand.
+- **The interview history has no pagination.** It filters and groups now, but
+  every session is still fetched and rendered at once. Fine at fifty
+  sessions; not at five thousand.
+- **Opening the interview room creates a session, even if you never start.**
+  That's where the empty "not started" rows come from. `/interviews` labels
+  them honestly and clears them in one click, but the real fix is to create
+  the row when the call starts.
+- **Signed-in pages have no browser tests.** Signing in needs the real
+  Supabase project and a real inbox, so the signed-in UI is covered by
+  component tests instead. A local Supabase with a seeded user would close
+  this gap.
+- **There is no demo reel.** The landing page has an interactive preview and
+  a repository link, but the 45-second reel specs §5.1 and §9 put at the top
+  of it hasn't been recorded.
 
 ## Roadmap
 
@@ -383,5 +491,21 @@ npm run dev
 - [x] Phase 4 — gamified roadmap (skill tree, XP, streaks, stage sheet, Start)
 - [x] Navigation — app shell, hub, interview history, document list, back links
       (unspecced; the app was seven leaf pages with no way between them)
-- [x] Phase 5 — ship (automated cleanup, roadmap/document deletion, interview filtering, and landing showcase)
+- [ ] Phase 5 — ship (specs §9)
+  - [x] Failed-analysis cleanup, roadmap/document deletion, interview filtering, landing showcase
+  - [x] AI disclosure before every session (EU AI Act Art. 50)
+  - [x] Privacy notice on the upload page, and `DELETE /api/account`
+  - [ ] 45-second demo reel on the landing page
+  - [ ] Real scorecard on `/sample-scorecard` instead of the fixture
+  - [ ] Error monitoring with the Live session error path covered
+  - [ ] Uptime check on `/api/demo/status`
+  - [ ] Use it for three real interview preps and write up the outcome
+- [x] Hardening — unit, route, component and browser tests with CI;
+      interview deletion; `/interviews` rebuilt; local times; light/dark
+      switch; WCAG AA contrast (unspecced)
 - [x] Phase 6 — targeted question drill mode (2-min audio drills on individual questions & CV gaps, drill HUD, dedicated DRILL_ARC, and instant STAR scoring)
+- [ ] Production readiness — abuse holes, voice scope, monitoring, capacity,
+      GDPR, deeper testing, staged launch: [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md).
+      The engineering for all seven phases is done; what's left needs the
+      owner's accounts, money, legal details or voice, in order, in
+      [docs/LAUNCH.md](docs/LAUNCH.md)
