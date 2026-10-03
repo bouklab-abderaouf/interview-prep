@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fakeSupabase, type Op, type Result } from "@/tests/helpers/fake-supabase";
 
@@ -75,6 +75,14 @@ describe("GET /api/cron/retention", () => {
   beforeEach(() => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
+    // The route reads the real clock; pin it to the fixtures' "now", or the
+    // "fresh" file stops being fresh a day after this test was written.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("stays closed until CRON_SECRET is configured", async () => {
