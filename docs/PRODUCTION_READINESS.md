@@ -219,26 +219,26 @@ user tells you.
     [RUNBOOK.md](RUNBOOK.md#error-tracking-sentry).
 - [x] Integrate it on the client and server (Next.js SDK). **Scrub personal
   data**: never send CV text, transcripts, emails or audio. Add a
-  `beforeSend` filter and a test for it. (91f2c89 — `lib/monitoring/scrub.ts`
+  `beforeSend` filter and a test for it. (80dad59 — `lib/monitoring/scrub.ts`
   is an allow-list: no user, extras, bodies, cookies, headers, query
   strings or console breadcrumbs; emails, JWTs and auth codes redacted.
   No tracing, no replay. 12 tests.)
 - [x] Capture the voice failure modes with tags: the 12s response watchdog,
   Live close `1011`, token mint failures, mic errors (as counts, not
   noise), scoring and analysis failures (503 vs 429), turn-flush failures.
-  (91f2c89 — `lib/monitoring/events.ts`, in the interview room and the
+  (80dad59 — `lib/monitoring/events.ts`, in the interview room and the
   demo.)
 - [x] Guardrail events as warnings with alerts: kill switch tripped, global
   demo cap reached, per-IP cap hits, per-user limit hits (from Phase 1),
   Turnstile failures. A spike in any of these is the abuse signal.
-  (91f2c89 — the alert rule for each is in RUNBOOK.md.)
+  (80dad59 — the alert rule for each is in RUNBOOK.md.)
   - [ ] **[you]** Create those alert rules in Sentry once the project exists.
 - [ ] **[you]** Uptime check on `/api/demo/status` and `/` (UptimeRobot or
   Better Stack free tier), alerting to email or phone. Exact checks in
   [RUNBOOK.md](RUNBOOK.md#uptime-checks).
 - [x] Runbook in `docs/RUNBOOK.md`: how to flip the kill switch, rotate
   `GEMINI_API_KEY`, read Supabase auth logs, and what each alert means.
-  (91f2c89 — it also covers the per-user limits as the "off switch" for
+  (80dad59 — it also covers the per-user limits as the "off switch" for
   signed-in spending, which the kill switch doesn't cover.)
 - [x] Re-run the Supabase security advisors after Phase 1's migration; note
   the date here. (2026-10-01: one new warning, on `consume_user_quota`
@@ -280,19 +280,19 @@ free tier, Google may use API inputs to improve its products, which
   interview, drill and analysis; the resulting daily and concurrent
   capacity per tier. Fetch current pricing (ai.google.dev pricing page) and
   compute the cost per demo, interview, drill and analysis, plus the
-  monthly cost at 10, 100 and 1000 users. (0af40a3 — ~$0.03 per demo,
+  monthly cost at 10, 100 and 1000 users. (0b76ea5 — ~$0.03 per demo,
   ~$0.15 per interview with scoring, ~$0.06 per drill, ~$0.05 per analysis;
   ~$185/month at 100 active users. Text prices double on 2027-01-01. The
   token counts are estimates until measured.)
 - [~] Set `DEMO_MAX_SESSIONS_PER_DAY`, `DEMO_MAX_SESSIONS_PER_IP_PER_HOUR`
   and Phase 1's per-user limits from that doc, with headroom kept for
-  signed-in users. (0af40a3 — *provisional:* the demo default drops from
+  signed-in users. (0b76ea5 — *provisional:* the demo default drops from
   200 to 20 a day, since 200 was never derived from the real quota.
   **[you]** your `.env.local` still says 200; CAPACITY.md has the formulas
   to set the final values once the limits above are filled in.)
 - [x] Handle concurrency. If the Live concurrent-session limit is small, a
   second visitor fails mid-handshake. Detect it, show "the interviewer is
-  busy, try in a minute", and count it in monitoring. (0af40a3 —
+  busy, try in a minute", and count it in monitoring. (0b76ea5 —
   `lib/live/close-reason.ts` classifies closes as quota / busy / time
   limit / network / server error; `kind` is tagged on the monitoring event.
   Google doesn't document the concurrency close code, so "busy" matches
@@ -306,7 +306,7 @@ free tier, Google may use API inputs to improve its products, which
   50% / 90% / 100% of a monthly cap), and confirm the paid-tier data terms.
 - [x] Make the "quota gone" paths honest: the demo already says "paused".
   Check that full interviews, scoring and analysis each tell the user what
-  happened and when to retry. Add tests with mocked 429s. (0af40a3 —
+  happened and when to retry. Add tests with mocked 429s. (0b76ea5 —
   scoring now distinguishes 503 "overloaded, a minute" from 429 "quota,
   later today"; a dropped interview releases the mic, saves its turns as
   "errored" (scorable from Interviews) and says so; analysis already
@@ -337,7 +337,7 @@ reviewed by someone qualified before opening sign-ups.*
   gap analysis, voice audio, transcripts, scorecards, XP and progress, IP
   hash, cookies), record: where it's stored, who processes it (Supabase EU,
   Google US, Cloudflare, Vercel, Sentry), the purpose, the legal basis, the
-  retention period, and how it's deleted. (1e2b0bf — plus the rules that
+  retention period, and how it's deleted. (93ac34d — plus the rules that
   keep it true, and a checklist of the DPAs.)
 - [ ] **[you]** Sign or accept the data processing agreements: Supabase
   DPA, Google (paid Gemini API terms), Vercel, Sentry, Cloudflare. Note the
@@ -345,7 +345,7 @@ reviewed by someone qualified before opening sign-ups.*
   SCCs). Checklist in [DATA.md](DATA.md#processors-and-agreements-for-you-to-complete).
 - [x] A `/privacy` page (FR and EN) and a `/legal` page (mentions légales:
   publisher identity and contact, host). Link both from the footer,
-  sign-in, onboarding and the demo. (1e2b0bf — a footer on every page,
+  sign-in, onboarding and the demo. (93ac34d — a footer on every page,
   including sign-in; links on the upload page, the demo's mic notice and
   Documents.)
   - [ ] **[you]** Fill in `NEXT_PUBLIC_LEGAL_*` (name, status, address,
@@ -354,17 +354,17 @@ reviewed by someone qualified before opening sign-ups.*
 - [x] Consent at onboarding: an explicit, unticked checkbox naming the
   processing (AI analysis by Google, outside the EU) before a CV is
   uploaded. Store the consent timestamp and version; add a migration and a
-  test. (1e2b0bf — migration 009, applied; the server refuses without the
+  test. (93ac34d — migration 009, applied; the server refuses without the
   current `CONSENT_VERSION`. The wording also covers interview audio.)
 - [x] Right of access and portability: `GET /api/account/export` returns a
   JSON of everything about the user (profile, roadmaps, stages, progress,
   sessions, turns, scorecards, document metadata, plus a signed CV URL),
   with a "Download my data" button in Documents → Your data. Route test and
-  e2e. (1e2b0bf)
+  e2e. (93ac34d)
 - [x] Retention: check what the upload page promises, then enforce it with
   a scheduled job (Supabase `pg_cron` or a Vercel cron) that deletes
   expired CVs from storage and expired rows. Make it testable and log each
-  run. (1e2b0bf — the promise is "kept until you delete it", which stands
+  run. (93ac34d — the promise is "kept until you delete it", which stands
   for user content. What users never see now expires: demo IP hashes and
   daily counters after 30 days, orphaned CV files daily. Runs as a Vercel
   cron behind `CRON_SECRET`; not active until deployed.)
@@ -373,14 +373,14 @@ reviewed by someone qualified before opening sign-ups.*
     7's SMTP). Not implemented.
 - [x] Cookie audit: the auth cookies and the `theme` preference cookie are
   strictly necessary or functional, so no banner should be needed. Document
-  that in `/privacy`, along with Turnstile's processing. (1e2b0bf)
+  that in `/privacy`, along with Turnstile's processing. (93ac34d)
 - [x] Voice: confirm and state precisely that audio streams to Google
   during a session and is never stored by the app, and that the demo
-  stores no transcript. (1e2b0bf — confirmed in the code. The demo's
+  stores no transcript. (93ac34d — confirmed in the code. The demo's
   notice wrongly said "nothing recorded or stored" with no mention of the
   free tier; every such notice now follows `NEXT_PUBLIC_GEMINI_TIER`.)
 - [x] Short breach procedure in `docs/RUNBOOK.md` (CNIL notification within
-  72h, who does what). (1e2b0bf)
+  72h, who does what). (93ac34d)
 - [x] Re-verify that `DELETE /api/account` removes every table added in
   Phases 1–5. (`tests/migrations.test.ts` covers every table, including
   `user_daily_usage`; the consent fields are on `profiles`.)
@@ -405,21 +405,21 @@ real devices, real people) before strangers do.
 - [x] Local Supabase (`supabase start`, Docker) with the migrations and a
   seeded test user, so Playwright can sign in (e.g. a session cookie from
   the local admin API). Local only, never against the real project.
-  (6ce1f0f — `supabase/config.toml` (only Postgres, API, auth, storage);
+  (bc80beb — `supabase/config.toml` (only Postgres, API, auth, storage);
   users are created per test and sign in through `/auth/confirm` with a
   token hash, as a magic link would. The config refuses a non-local
   Supabase.)
 - [x] A test-only fake Gemini (`GEMINI_FAKE=1`, with a test proving prod
-  ignores it) that returns fixtures for analysis and scoring. (ed343d4 —
+  ignores it) that returns fixtures for analysis and scoring. (1dc523c —
   the guard is stronger than `NODE_ENV`, which is `production` in the e2e
   build too: it also requires Supabase on this machine, which a real
   deployment never is.)
 - [x] Signed-in e2e: onboarding → roadmap → start a stage (session row) →
   score with the fake → scorecard → interviews (filter, delete, clear) →
   documents → export (Phase 5) → account deletion. Run it in CI.
-  (6ce1f0f — `e2e-auth/`, `npm run test:e2e:auth`, plus a CI job that
+  (bc80beb — `e2e-auth/`, `npm run test:e2e:auth`, plus a CI job that
   starts a local Supabase on the runner. First run in CI: 5 of 6 passed;
-  the sixth was a wrong expectation in the test (a6145a2). Green since:
+  the sixth was a wrong expectation in the test (0ed8fa3). Green since:
   6/6 in [run 36925228604](https://github.com/bouklab-abderaouf/interview-prep/actions/runs/36925228604).
   It can't run on this machine yet: Docker Desktop fails to start here
   ("initializing Inference manager … dockerInference: The file cannot be
@@ -429,19 +429,19 @@ real devices, real people) before strangers do.
     restarting Windows first), then `npx supabase start` and
     `npm run test:e2e:auth`.
 - [x] Fix the **empty-session root cause**: create the session row when the
-  call starts, not when the room opens. (ed343d4 — Start and Drill open
+  call starts, not when the room opens. (1dc523c — Start and Drill open
   `/session/new?…`; the room creates the row after the mic is granted,
   swaps the URL in place, and deletes the row again if the call never
   starts. Covered by the signed-in suite.)
   - [ ] **[you] [quota]** One live session to confirm: the session should
     appear under Interviews only once you press Start.
 - [x] **Decision [you]:** the font. *Took the recommended default:*
-  removed the Arial override, so Geist is used everywhere. (e5ac03e)
+  removed the Arial override, so Geist is used everywhere. (6ed4bb8)
 - [x] `docs/DEVICE_CHECKLIST.md`: Chrome, Edge, Firefox, Safari on macOS,
   Safari on iOS (AudioWorklet and echo cancellation are the usual
   suspects), Chrome on Android; speakers vs headphones vs Bluetooth; mic
   denied, revoked mid-session, or a device switched; the tab in the
-  background; a network drop mid-session; a slow 3G profile. (6ce1f0f)
+  background; a network drop mid-session; a slow 3G profile. (bc80beb)
 - [ ] **[you] [quota]** Run the device checklist. File each failure as a
   task here.
 - [-] Optional: Playwright screenshot tests for key public pages in both
@@ -488,7 +488,7 @@ checklist, and the private beta.
   in any browser. ([LAUNCH.md](LAUNCH.md#2-email-custom-smtp))
 - [ ] **[you]** Supabase Auth URL configuration: production Site URL and
   redirect allow-list. ([LAUNCH.md](LAUNCH.md#3-supabase-settings))
-- [x] Sign-up restriction for the stages. (91fdc80 — migration 010, a
+- [x] Sign-up restriction for the stages. (51dffea — migration 010, a
   trigger on `auth.users` with `open` / `allowlist` / `closed` modes,
   applied and checked in a rolled-back block; default `open`; existing
   users always sign in; a clear message on the sign-in page; account
@@ -503,7 +503,7 @@ checklist, and the private beta.
   record the 45-second demo reel, and write up the three real preps (the
   Hymaïa and Celad roadmaps count).
 - [x] Rollback plan in RUNBOOK.md: the kill switch, re-closing sign-ups,
-  reverting a deploy. (91fdc80 — from feature switches up to promoting the
+  reverting a deploy. (51dffea — from feature switches up to promoting the
   last good deploy and forward-only migrations.)
 
 **Done when:** Stage C is live, monitored, and has a written rollback.
