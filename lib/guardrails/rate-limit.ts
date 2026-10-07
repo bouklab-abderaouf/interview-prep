@@ -16,17 +16,7 @@ export function hashIp(ip: string): string {
   return createHash("sha256").update(`${ip}${process.env.IP_HASH_SALT ?? ""}`).digest("hex");
 }
 
-// CLIENT_IP_HEADER names a header the host sets itself and clients can't
-// forge — `cf-connecting-ip` behind Cloudflare (compose.yaml). Behind
-// Cloudflare the first X-Forwarded-For hop is whatever the client sent, so it
-// would let a visitor dodge the per-IP limit. Unset on Vercel, which rewrites
-// X-Forwarded-For itself (and passes a client's cf-connecting-ip through).
 export function getClientIp(request: Request): string {
-  const trusted = process.env.CLIENT_IP_HEADER;
-  if (trusted) {
-    const ip = request.headers.get(trusted)?.trim();
-    if (ip) return ip;
-  }
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) return forwardedFor.split(",")[0].trim();
   return request.headers.get("x-real-ip") ?? "unknown";

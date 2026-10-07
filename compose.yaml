@@ -1,9 +1,7 @@
-# The app in Docker, optionally exposed through a Cloudflare Tunnel.
-# docs/DOCKER.md explains each mode and the Supabase setting each one needs.
+# The production image, run locally (docs/DOCKER.md). Deployment is Vercel
+# (docs/LAUNCH.md); this is for checking the real build on your machine.
 #
-#   docker compose up -d --build                    # http://localhost:3030 only
-#   docker compose --profile quick up -d --build    # + a temporary https://….trycloudflare.com URL
-#   docker compose --profile named up -d --build    # + your own hostname (TUNNEL_TOKEN in .env)
+#   docker compose up -d --build     # http://localhost:3030
 
 services:
   app:
@@ -15,43 +13,8 @@ services:
     env_file:
       - path: .env.local
         required: true
-    environment:
-      # Set by Cloudflare at its edge; X-Forwarded-For's first hop isn't
-      # (lib/guardrails/rate-limit.ts).
-      CLIENT_IP_HEADER: cf-connecting-ip
     ports:
-      # Loopback only: other machines reach the app through the tunnel, never
-      # straight to this port.
       - "127.0.0.1:${APP_PORT:-3030}:3000"
-    restart: unless-stopped
-
-  # No Cloudflare account needed. The URL is random and changes every time
-  # this container starts: `docker compose logs tunnel` prints it.
-  tunnel:
-    profiles: [quick]
-    image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate --url http://app:3000
-    depends_on:
-      app:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # A stable hostname on a domain in your Cloudflare account. Create the
-  # tunnel in the Cloudflare dashboard (Zero Trust → Networks → Tunnels), point
-  # its public hostname at http://app:3000, and put its token in .env as
-  # TUNNEL_TOKEN=… (compose reads .env, not .env.local).
-  tunnel-named:
-    profiles: [named]
-    image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate run
-    environment:
-      # Not `:?`: compose interpolates every service, even ones whose
-      # profile is off, so that would break the other two modes.
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
-    depends_on:
-      app:
-        condition: service_healthy
-    restart: unless-stopped
 
 secrets:
   env:

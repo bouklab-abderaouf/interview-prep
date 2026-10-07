@@ -62,16 +62,6 @@ describe("guardrail helpers", () => {
     expect(getClientIp(new Request("http://x"))).toBe("unknown");
   });
 
-  it("trusts only the header CLIENT_IP_HEADER names, when set", () => {
-    const headers = { "x-forwarded-for": "6.6.6.6, 9.9.9.9", "cf-connecting-ip": "9.9.9.9" };
-    expect(getClientIp(new Request("http://x", { headers }))).toBe("6.6.6.6");
-    vi.stubEnv("CLIENT_IP_HEADER", "cf-connecting-ip");
-    expect(getClientIp(new Request("http://x", { headers }))).toBe("9.9.9.9");
-    // Missing on a request (e.g. a local health check): the usual fallbacks.
-    expect(getClientIp(new Request("http://x", { headers: { "x-real-ip": "5.6.7.8" } }))).toBe("5.6.7.8");
-    vi.unstubAllEnvs();
-  });
-
   it("hashes IPs with the salt so raw IPs are never stored", () => {
     vi.stubEnv("IP_HASH_SALT", "salt-a");
     const a = hashIp("1.2.3.4");
