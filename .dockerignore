@@ -1,0 +1,25 @@
+# Secrets never enter the build context. The build reads the NEXT_PUBLIC_*
+# lines of .env.local through a BuildKit secret, and the container gets the
+# rest at run time (compose.yaml, env_file).
+.env*
+!.env.local.example
+
+# Rebuilt inside the image
+node_modules
+.next
+.next-e2e
+.next-e2e-auth
+*.tsbuildinfo
+next-env.d.ts
+
+# Not needed to build or run the app
+.git
+.github
+.vercel
+coverage
+test-results
+test-results-auth
+playwright-report
+playwright-report-auth
+supabase/.temp
+supabase/.branches

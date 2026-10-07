@@ -1,6 +1,7 @@
 import type { EmailOtpType } from "@supabase/supabase-js";
-import { type NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
+import { redirectToPath } from "@/lib/redirect";
 import { createClient } from "@/lib/supabase/server";
 
 // Phase 2 — exchanges a magic-link redirect for a session. Handles both
@@ -24,12 +25,11 @@ export async function GET(request: NextRequest) {
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
 
-  const redirectTo = request.nextUrl.clone();
   // Land on the hub, not /onboarding — that page builds a *new* roadmap
   // every time, which is wrong for anyone signing back in. /home sends
-  // genuinely-new users on to onboarding itself.
-  redirectTo.pathname = "/home";
-  redirectTo.search = "";
+  // genuinely-new users on to onboarding itself. Relative redirects: see
+  // lib/redirect.ts for why not request.url.
+  const home = "/home";
 
   const supabase = await createClient();
 
@@ -39,11 +39,11 @@ export async function GET(request: NextRequest) {
 
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(redirectTo);
+    if (!error) return redirectToPath(home);
     errorCode = error.code ?? error.message;
   } else if (tokenHash && type) {
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
-    if (!error) return NextResponse.redirect(redirectTo);
+    if (!error) return redirectToPath(home);
     errorCode = error.code ?? error.message;
   }
 
@@ -60,7 +60,5 @@ export async function GET(request: NextRequest) {
       : errorCode === "otp_expired" || errorCode === "flow_state_expired"
         ? "expired"
         : "link";
-  redirectTo.pathname = "/sign-in";
-  redirectTo.search = `?error=${reason}`;
-  return NextResponse.redirect(redirectTo);
+  return redirectToPath(`/sign-in?error=${reason}`);
 }

@@ -322,7 +322,9 @@ Fill in `.env.local`:
   (`NEXT_PUBLIC_LEGAL_*`), the retention job (`CRON_SECRET`) and the
   operational switches are listed with defaults in `.env.local.example`
   and explained in [docs/RUNBOOK.md](docs/RUNBOOK.md). Deploying:
-  [docs/LAUNCH.md](docs/LAUNCH.md).
+  [docs/LAUNCH.md](docs/LAUNCH.md) (Vercel), or
+  [docs/DOCKER.md](docs/DOCKER.md) (Docker, shared through a Cloudflare
+  Tunnel — `docker compose --profile quick up -d --build`).
 
 Magic links work with Supabase's default email template, with two catches
 worth knowing: the link only works **in the browser that requested it**

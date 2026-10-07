@@ -25,6 +25,9 @@ const nextConfig: NextConfig = {
   // The Playwright suite builds with placeholder credentials into its own
   // directory, so it never overwrites (or reuses) a real build in .next.
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  // The Docker image (Dockerfile) runs the self-contained server Next builds
+  // into .next/standalone. Off elsewhere: `next start` and Vercel don't use it.
+  output: process.env.NEXT_OUTPUT_STANDALONE === "1" ? "standalone" : undefined,
   poweredByHeader: false,
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
