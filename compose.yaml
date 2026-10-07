@@ -1,0 +1,21 @@
+# The production image, run locally (docs/DOCKER.md). Deployment is Vercel
+# (docs/LAUNCH.md); this is for checking the real build on your machine.
+#
+#   docker compose up -d --build     # http://localhost:3030
+
+services:
+  app:
+    build:
+      context: .
+      secrets:
+        - env
+    image: interview-prep:latest
+    env_file:
+      - path: .env.local
+        required: true
+    ports:
+      - "127.0.0.1:${APP_PORT:-3030}:3000"
+
+secrets:
+  env:
+    file: .env.local

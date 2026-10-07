@@ -1,0 +1,4 @@
+# Read inside Linux containers: keep Unix line endings on every checkout.
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+compose.yaml text eol=lf

@@ -144,6 +144,7 @@ Gemini's structured output engine (`responseJsonSchema`) has an undocumented dep
 - **Monitoring** (`lib/monitoring/`): report a new failure mode or abuse signal with `reportEvent(name, tags)` — add the name to `EVENTS` with a level, and its alert to docs/RUNBOOK.md. Tags are short codes (status, close code, limit kind), never free text. Never attach transcripts, CV text, emails or request bodies to anything sent to Sentry; `scrub.ts` is an allow-list, so a new field is dropped unless it's added there deliberately.
 - **Sign-ups (phase 7)**: a trigger on `auth.users` (migration 010) admits new users per `app_settings.signups` — `open`, `allowlist` (`signup_allowlist`) or `closed`; existing users always sign in. Supabase reports a refusal as "Database error saving new user", which `SignInForm` translates. Switching is SQL only (docs/RUNBOOK.md).
 - **Personal data (GDPR, phase 5)**: `docs/DATA.md` is the inventory and `/privacy` the public version; both read from `lib/legal.ts`. Adding, moving or keeping data longer means updating both. A new user-owned table must cascade from `auth.users` (tested), appear in `GET /api/account/export` and its test, and get a retention rule. `/api/analyze` requires consent to the current `CONSENT_VERSION`; change the wording or what goes to Google and you bump it. Notices about Google's use of data follow `NEXT_PUBLIC_GEMINI_TIER`, never hard-coded text.
+- **Redirects from route handlers are relative** (`redirectToPath()` in `lib/redirect.ts`). Self-hosted (the Docker image, docs/DOCKER.md), `request.url` is the server's own address (`http://0.0.0.0:3000`), so `new URL(path, request.url)` sends people somewhere unreachable. Vercel hides this.
 - **Input caps** live in the route that reads the input (CV 4 MB and `%PDF-` signature, JD 20k chars, turn flushes 500 × 20k chars). Keep the CV cap under Vercel's ~4.5 MB body limit.
 
 ---
@@ -210,12 +211,14 @@ interview-prep/
 │   ├── TESTING.md               # What each test layer covers and how to write one
 │   ├── PRODUCTION_READINESS.md  # The phased plan and what's left
 │   ├── LAUNCH.md                # The user's launch steps (hosting, SMTP, stages A/B/C)
+│   ├── DOCKER.md                # Running the production image locally
 │   ├── RUNBOOK.md               # Switches, alerts, retention job, breach procedure, rollback
 │   ├── CAPACITY.md              # Cost per flow and how to derive the caps
 │   ├── DATA.md                  # Personal-data inventory and DPAs
 │   ├── voice-redteam.md         # Live script: does the interviewer stay in role?
 │   └── DEVICE_CHECKLIST.md      # Manual cross-browser/device pass
 ├── .github/workflows/ci.yml     # check + browser tests on every push/PR (no secrets)
+├── Dockerfile, compose.yaml     # The production image, run locally (docs/DOCKER.md)
 ├── proxy.ts                     # Next.js 16 proxy convention (session refresh & auth guard)
 └── package.json
 ```

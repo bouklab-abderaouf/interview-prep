@@ -17,8 +17,16 @@ From phases 1–6 (details in [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md)
 
 ## 1. Hosting (Vercel)
 
-1. Import the GitHub repository into Vercel (framework: Next.js; defaults are fine).
-2. Settings → Environment Variables (Production), from `.env.local.example`:
+Free (Hobby) plan is enough to test with friends; it's for non-commercial use.
+`vercel.json` already runs functions in Dublin (`dub1`), next to the Supabase
+database (`eu-west-1`), and schedules the daily retention job.
+
+1. Merge the work into `main` (Vercel deploys `main` to production).
+2. vercel.com → Add New → Project → import the GitHub repository (framework: Next.js; defaults are fine).
+3. Before the first deploy, Environment Variables: paste the whole of `.env.vercel` into the first
+   *Key* field (Vercel splits it into variables), then delete that file. It's your `.env.local`
+   plus what production needs; regenerate it with Claude if you've lost it. The full list, from
+   `.env.local.example`:
    - Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
    - Gemini: `GEMINI_API_KEY`, `GEMINI_LIVE_MODEL`, `GEMINI_TEXT_MODEL`, `GEMINI_TEXT_FALLBACK_MODEL`, `NEXT_PUBLIC_GEMINI_TIER`
    - Turnstile: `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
@@ -27,14 +35,23 @@ From phases 1–6 (details in [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md)
    - Sentry: `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_ENVIRONMENT=production`
    - Legal: `NEXT_PUBLIC_LEGAL_*`
    - **Never** set `GEMINI_FAKE`, `ENABLE_VOICE_SMOKE_TEST` or `CSP_REPORT_ONLY` in production.
-3. Add your domain, then redeploy so the `NEXT_PUBLIC_*` values are built in.
-4. Check: Settings → Cron Jobs lists `/api/cron/retention` daily.
+4. Deploy. Your address is `https://<project>.vercel.app` (Settings → Domains). Share that one:
+   preview deployments (one per branch) ask for a Vercel login by default.
+5. Changed a `NEXT_PUBLIC_*` variable later? Redeploy: they're built into the page.
+6. Check: Settings → Cron Jobs lists `/api/cron/retention` daily.
 
 ## 2. Email (custom SMTP)
 
-Supabase's built-in sender is slow and allows only a few emails an hour.
+**Required before anyone but you can sign in.** Supabase's built-in sender
+only delivers to members of your Supabase team, two emails an hour.
 
-1. Pick a provider (Resend, Brevo, Postmark…) and verify your domain there (SPF, DKIM).
+1. Pick a sender:
+   - *To test with a few friends:* your Gmail. Turn on 2-step verification, then
+     myaccount.google.com/apppasswords → create an app password. Host `smtp.gmail.com`,
+     port `465`, user = your Gmail address, password = the 16-character app password,
+     sender = your Gmail address. Gmail allows about 500 emails a day.
+   - *For launch:* a provider (Resend, Brevo, Postmark…) with your own domain verified
+     (SPF, DKIM), so links don't land in spam.
 2. Supabase → Authentication → Emails → SMTP settings: host, port, user, password, sender address.
 3. Now the templates can be edited. In **Magic Link** and **Confirm signup**, set the link to:
    `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email`
@@ -43,7 +60,8 @@ Supabase's built-in sender is slow and allows only a few emails an hour.
 
 ## 3. Supabase settings
 
-- Authentication → URL Configuration: **Site URL** = `https://<your domain>`; **Redirect URLs**: add `https://<your domain>/auth/confirm` (and the Vercel preview pattern if you use previews).
+- Authentication → URL Configuration: **Site URL** = `https://<your address>`; **Redirect URLs**: add `https://<your address>/auth/confirm`, and keep `http://localhost:3000/auth/confirm` for `npm run dev`. Without it, sign-in emails point at the Site URL instead and the link fails.
+- Cloudflare → Turnstile → your widget → Hostnames: add `<your address>`, or the public `/demo` fails its check.
 - Optional: Authentication → Bot protection → Turnstile with your keys, together with `NEXT_PUBLIC_SIGNIN_CAPTCHA=1` (RUNBOOK.md).
 - Run the security advisors once more (RUNBOOK.md lists the accepted warnings).
 
