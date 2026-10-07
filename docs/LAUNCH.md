@@ -53,9 +53,13 @@ only delivers to members of your Supabase team, two emails an hour.
    - *For launch:* a provider (Resend, Brevo, Postmark…) with your own domain verified
      (SPF, DKIM), so links don't land in spam.
 2. Supabase → Authentication → Emails → SMTP settings: host, port, user, password, sender address.
-3. Now the templates can be edited. In **Magic Link** and **Confirm signup**, set the link to:
-   `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email`
-   so links work in any browser or device (`app/auth/confirm/route.ts` handles it).
+3. Now the templates can be edited. Paste `supabase/templates/magic-link.html` into **Magic Link**
+   (subject: *Your Interview Prep sign-in link*) and `supabase/templates/confirm-signup.html` into
+   **Confirm signup** (subject: *Confirm your email for Interview Prep*). Their link,
+   `{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=email`, works in any browser or device
+   (`app/auth/confirm/route.ts` handles it). It needs `https://<your address>/auth/confirm` in the
+   Redirect URLs (§3): otherwise `RedirectTo` falls back to the Site URL and the link breaks.
+   The emails say links expire in 1 hour, Supabase's default (Email OTP Expiration); change one, change both.
 4. Raise the email rate limit (Authentication → Rate Limits) to something sensible for your traffic.
 
 ## 3. Supabase settings
